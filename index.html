@@ -460,7 +460,7 @@ function setupTagInput(type){
 
 // ─── Dropbox sync ────────────────────────────────────────────────────────────
 const DBX_APP_KEY = 'sx1o2j39v4j4928';
-const DBX_FILE_PATH = '/GestionVentesStock/data.json';
+const DBX_FILE_PATH = '/Ent BZAK/Commercial/GestionVentesStock/data.json';
 const DBX_REDIRECT_URI = window.location.origin + window.location.pathname;
 let dbxAccessToken = localStorage.getItem('dbx_access_token') || null;
 let dbxSyncTimer = null;
@@ -702,7 +702,7 @@ function save(){
   dbxScheduleUpload();
 }
 function sKey(pid,c,m,t){return`${pid}||${c}||${m}||${t}`;}
-function getStock(pid,c,m,t){const k=sKey(pid,c,m,t);if(!(k in stock))stock[k]=10;return stock[k];}
+function getStock(pid,c,m,t){const k=sKey(pid,c,m,t);if(!(k in stock))stock[k]=0;return stock[k];}
 function setStock(pid,c,m,t,v){stock[sKey(pid,c,m,t)]=Math.max(0,v);save();}
 
 // ─── Nav ──────────────────────────────────────────────────────────────────────
@@ -770,32 +770,35 @@ function calcPrix(){
   if(!prod||!prixHT){box.style.display='none';return;}
 
   const prixTTC=htToTtc(prixHT);
-  let remiseMontantHT=0;
+  const caTTCbrut=prixTTC*qty;
+  let remiseMontantTTC=0;
   if(remise>0){
-    remiseMontantHT=remiseType==='pct' ? prixHT*qty*(remise/100) : Math.min(remise, prixHT*qty);
+    remiseMontantTTC=remiseType==='pct' ? caTTCbrut*(remise/100) : Math.min(remise, caTTCbrut);
   }
-  const caHTbrut=prixHT*qty;
-  const caHTnet=caHTbrut-remiseMontantHT;
-  const caTTCnet=htToTtc(caHTnet);
+  const caTTCnet=caTTCbrut-remiseMontantTTC;
+  const caHTnet=ttcToHt(caTTCnet);
   const tvaCollectee=caTTCnet-caHTnet;
+  const remiseMontantHTreelle=ttcToHt(remiseMontantTTC);
   const frais=type==='TPE Physique' ? caTTCnet*0.0175 : caTTCnet*0.015+0.25;
-  const marge=(prixHT-(prod.achat||0))*qty - remiseMontantHT - frais;
+  const marge=(prixHT-(prod.achat||0))*qty - remiseMontantHTreelle - frais;
   const tauxMarge=caHTnet>0?(marge/caHTnet*100):0;
   const dispo=c&&m&&t?getStock(pid,c,m,t):'?';
-  const stockCol=dispo<=3?'var(--danger)':'var(--success)';
+  const stockInsuffisant = dispo!=='?' && qty>dispo;
+  const stockCol = stockInsuffisant ? 'var(--danger)' : (dispo<=3 ? 'var(--warning)' : 'var(--success)');
+  const stockWeight = stockInsuffisant ? '800' : '600';
 
   box.style.display='block';
   box.innerHTML=`
     <div class="prix-row"><span>Prix unitaire HT</span><span>${prixHT.toFixed(2)} €</span></div>
     <div class="prix-row"><span>Prix unitaire TTC (TVA ${TVA}%)</span><span>${prixTTC.toFixed(2)} €</span></div>
     <div class="prix-row"><span>Quantité</span><span>× ${qty}</span></div>
-    ${remise>0?`<div class="prix-row remise"><span>Remise (${remiseType==='pct'?remise+'%':remise+' €'})</span><span>− ${remiseMontantHT.toFixed(2)} €</span></div>`:''}
-    <div class="prix-row total"><span>CA HT net</span><span>${caHTnet.toFixed(2)} €</span></div>
+    ${remise>0?`<div class="prix-row remise"><span>Remise (${remiseType==='pct'?remise+'%':remise+' €'} sur TTC)</span><span>− ${remiseMontantTTC.toFixed(2)} €</span></div>`:''}
     <div class="prix-row total" style="color:#1e5fa8"><span>CA TTC net</span><span>${caTTCnet.toFixed(2)} €</span></div>
+    <div class="prix-row total"><span>CA HT net</span><span>${caHTnet.toFixed(2)} €</span></div>
     <div class="prix-row"><span style="color:var(--text-muted);font-size:12px">TVA collectée</span><span style="color:var(--text-muted);font-size:12px">${tvaCollectee.toFixed(2)} €</span></div>
     <div class="prix-row"><span style="color:var(--text-muted);font-size:12px">Frais canal (est.)</span><span style="color:var(--text-muted);font-size:12px">− ${frais.toFixed(2)} €</span></div>
     <div class="prix-row marge"><span>Marge nette estimée</span><span>${marge.toFixed(2)} € (${tauxMarge.toFixed(1)}%)</span></div>
-    <div class="prix-row"><span style="font-size:12px">Stock disponible (${c||'?'} / ${m||'?'} / ${t||'?'})</span><span style="color:${stockCol};font-weight:600">${dispo}</span></div>
+    <div class="prix-row"><span style="font-size:12px">Stock disponible (${c||'?'} / ${m||'?'} / ${t||'?'})</span><span style="color:${stockCol};font-weight:${stockWeight}">${dispo}${stockInsuffisant?' — insuffisant !':''}</span></div>
   `;
 }
 
@@ -819,14 +822,15 @@ function ajouterVente(){
   const dispo=getStock(pid,couleur,motif,taille);
   if(qty>dispo){flash('v-flash',`Stock insuffisant — ${dispo} dispo`,'err');return;}
   const prixTTC=htToTtc(prixHT);
-  let remiseMontantHT=0;
-  if(remise>0) remiseMontantHT=remiseType==='pct'?prixHT*qty*(remise/100):Math.min(remise,prixHT*qty);
-  const caHTbrut=prixHT*qty;
-  const caHTnet=parseFloat((caHTbrut-remiseMontantHT).toFixed(2));
-  const caTTCnet=parseFloat(htToTtc(caHTnet).toFixed(2));
+  const caTTCbrut=prixTTC*qty;
+  let remiseMontantTTC=0;
+  if(remise>0) remiseMontantTTC=remiseType==='pct'?caTTCbrut*(remise/100):Math.min(remise,caTTCbrut);
+  const caTTCnet=parseFloat((caTTCbrut-remiseMontantTTC).toFixed(2));
+  const caHTnet=parseFloat(ttcToHt(caTTCnet).toFixed(2));
+  const remiseMontantHTreelle=ttcToHt(remiseMontantTTC);
   const frais=type==='TPE Physique'?caTTCnet*0.0175:caTTCnet*0.015+0.25;
-  const marge=parseFloat(((prixHT-prod.achat)*qty - remiseMontantHT - frais).toFixed(2));
-  ventes.push({id:nextVenteId++,date,client,type,envoi,produitId:pid,produitNom:prod.nom,couleur,motif,taille,qty,prixHT,prixTTC:parseFloat(prixTTC.toFixed(2)),remise,remiseType,remiseMontantHT:parseFloat(remiseMontantHT.toFixed(2)),caHT:caHTnet,caTTC:caTTCnet,marge,tvaRate:TVA,note});
+  const marge=parseFloat(((prixHT-prod.achat)*qty - remiseMontantHTreelle - frais).toFixed(2));
+  ventes.push({id:nextVenteId++,date,client,type,envoi,produitId:pid,produitNom:prod.nom,couleur,motif,taille,qty,prixHT,prixTTC:parseFloat(prixTTC.toFixed(2)),remise,remiseType,remiseMontantHT:parseFloat(remiseMontantHTreelle.toFixed(2)),remiseMontantTTC:parseFloat(remiseMontantTTC.toFixed(2)),caHT:caHTnet,caTTC:caTTCnet,marge,tvaRate:TVA,note});
   setStock(pid,couleur,motif,taille,dispo-qty);save();
   flash('v-flash',`Vente enregistrée — stock mis à jour (${dispo-qty} restant${dispo-qty!==1?'s':''})`,'ok');
   document.getElementById('v-qty').value=1;
