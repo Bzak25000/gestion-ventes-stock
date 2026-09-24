@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gestion Ventes & Stock</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="vendor/css/all.min.css">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -176,6 +176,7 @@ tbody tr:hover { background:var(--surface-2); }
 @media(max-width:900px){ .metrics{grid-template-columns:repeat(2,1fr)} .g4,.g5,.g6{grid-template-columns:1fr 1fr} .g3{grid-template-columns:1fr 1fr} .stock-grid{grid-template-columns:1fr} }
 @media(max-width:640px){ .layout{flex-direction:column} nav{width:100%;height:auto;position:static;display:flex;overflow-x:auto;padding:.5rem;border-right:none;border-bottom:1px solid var(--border)} .nav-label{display:none} .nav-item{border-left:none;border-bottom:3px solid transparent;padding:6px 10px;white-space:nowrap;font-size:12px} .nav-item.active{border-bottom-color:var(--accent);border-left-color:transparent} main{padding:1rem} .metrics{grid-template-columns:repeat(2,1fr)} .g2,.g3,.g4,.g5,.g6{grid-template-columns:1fr} }
 </style>
+<link rel="stylesheet" href="commandes.css">
 </head>
 <body>
 
@@ -203,6 +204,13 @@ tbody tr:hover { background:var(--surface-2); }
 </nav>
 
 <main>
+<div id="storage-warning" class="alert warning" hidden>Mode aperçu sans stockage persistant. Exportez vos données avant de fermer cette page.</div>
+<div class="data-tools">
+  <span id="environment-note"></span>
+  <button class="btn sm" onclick="exporterDonnees()">Exporter les données</button>
+  <button class="btn sm" onclick="document.getElementById('data-import').click()">Importer des données</button>
+  <input type="file" id="data-import" accept=".json,application/json" hidden onchange="importerDonnees(this)">
+</div>
 
 <!-- ===== VENTES ===== -->
 <div id="sec-ventes" class="section active">
@@ -494,6 +502,7 @@ tbody tr:hover { background:var(--surface-2); }
 </main>
 </div>
 
+<script src="storage.js"></script>
 <script>
 // ─── Couleurs ────────────────────────────────────────────────────────────────
 const COLOR_HEX={blanc:'#f9f9f7',white:'#f9f9f7',noir:'#1a1a1a',black:'#1a1a1a',bleu:'#3b82f6',blue:'#3b82f6',rouge:'#ef4444',red:'#ef4444',vert:'#22c55e',green:'#22c55e',jaune:'#eab308',yellow:'#eab308',orange:'#f97316',rose:'#ec4899',pink:'#ec4899',violet:'#8b5cf6',gris:'#9ca3af',grey:'#9ca3af',gray:'#9ca3af',beige:'#d4b896',marine:'#1e3a5f',navy:'#1e3a5f',bordeaux:'#800020',camel:'#c19a6b',kaki:'#7a7a2a',khaki:'#7a7a2a',naturel:'#d9c9a3',lavande:'#b589d6',turquoise:'#06b6d4',corail:'#ff7043',argent:'#c0c0c0',marron:'#7b4426',taupe:'#b5a28a',sable:'#c2b280'};
@@ -501,9 +510,9 @@ function colorHex(c){return COLOR_HEX[c.trim().toLowerCase()]||'#aaa';}
 function colorDot(c){const h=colorHex(c);return `<span class="color-dot" style="background:${h};${h==='#f9f9f7'?'border:1px solid #ccc;':''}"></span>`;}
 
 // ─── TVA ─────────────────────────────────────────────────────────────────────
-let TVA = parseFloat(localStorage.getItem('appv4_tva')||'20');
+let TVA = parseFloat(appStorage.getItem('appv4_tva')||'20');
 function getTVA(){return TVA/100;}
-function saveTVA(){TVA=parseFloat(document.getElementById('tva-rate').value)||20;localStorage.setItem('appv4_tva',TVA);calcPrix();dbxScheduleUpload();}
+function saveTVA(){TVA=parseFloat(document.getElementById('tva-rate').value)||20;appStorage.setItem('appv4_tva',TVA);calcPrix();dbxScheduleUpload();}
 function htToTtc(ht){return ht*(1+getTVA());}
 function ttcToHt(ttc){return ttc/(1+getTVA());}
 
@@ -535,7 +544,7 @@ function setupTagInput(type){
 const DBX_APP_KEY = 'sx1o2j39v4j4928';
 const DBX_FILE_PATH = '/Ent BZAK/Commercial/GestionVentesStock/data.json';
 const DBX_REDIRECT_URI = window.location.origin + window.location.pathname;
-let dbxAccessToken = localStorage.getItem('dbx_access_token') || null;
+let dbxAccessToken = appStorage.getItem('dbx_access_token') || null;
 let dbxSyncTimer = null;
 let dbxIsSyncing = false;
 let dbxSuppressNextRemoteApply = false;
@@ -580,6 +589,10 @@ function dbxRandomString(len) {
 }
 
 async function dbxConnect() {
+  if (window.location.origin !== 'https://bzak25000.github.io') {
+    alert('La connexion Dropbox est réservée à votre adresse GitHub habituelle. Dans cet aperçu, utilisez Importer / Exporter les données.');
+    return;
+  }
   const verifier = dbxRandomString(64);
   sessionStorage.setItem('dbx_pkce_verifier', verifier);
   const challenge = await dbxSha256(verifier);
@@ -613,8 +626,8 @@ async function dbxHandleOAuthRedirect() {
     const data = await resp.json();
     if (data.access_token) {
       dbxAccessToken = data.access_token;
-      localStorage.setItem('dbx_access_token', dbxAccessToken);
-      if (data.refresh_token) localStorage.setItem('dbx_refresh_token', data.refresh_token);
+      appStorage.setItem('dbx_access_token', dbxAccessToken);
+      if (data.refresh_token) appStorage.setItem('dbx_refresh_token', data.refresh_token);
     } else {
       throw new Error(data.error_description || 'Échec de connexion');
     }
@@ -629,8 +642,8 @@ async function dbxHandleOAuthRedirect() {
 function dbxDisconnect() {
   if (!confirm('Se déconnecter de Dropbox ? Les données resteront sur cet ordinateur mais ne seront plus synchronisées.')) return;
   dbxAccessToken = null;
-  localStorage.removeItem('dbx_access_token');
-  localStorage.removeItem('dbx_refresh_token');
+  appStorage.removeItem('dbx_access_token');
+  appStorage.removeItem('dbx_refresh_token');
   dbxSetStatus('off');
 }
 
@@ -679,7 +692,7 @@ async function dbxUpload(payload) {
 }
 
 function dbxBuildPayload() {
-  return { produits, stock, ventes, tva: TVA, updatedAt: new Date().toISOString() };
+  return { produits, stock, ventes, commandesStock, schemaVersion: 2, tva: TVA, updatedAt: new Date().toISOString() };
 }
 
 function dbxApplyRemoteData(data) {
@@ -688,17 +701,20 @@ function dbxApplyRemoteData(data) {
   produits = data.produits || produits;
   stock = data.stock || stock;
   ventes = data.ventes || ventes;
+  // Ne pas effacer des commandes locales si une ancienne version du fichier est synchronisée.
+  if (Array.isArray(data.commandesStock)) commandesStock = data.commandesStock;
   if (typeof data.tva === 'number') {
     TVA = data.tva;
     const el = document.getElementById('tva-rate');
     if (el) el.value = TVA;
   }
   nextProdId = produits.length ? Math.max(...produits.map(p=>p.id))+1 : 1;
-  nextVenteId = ventes.length ? Math.max(...ventes.map(v=>v.id))+1 : 1;
-  localStorage.setItem('appv4_produits', JSON.stringify(produits));
-  localStorage.setItem('appv4_stock', JSON.stringify(stock));
-  localStorage.setItem('appv4_ventes', JSON.stringify(ventes));
-  localStorage.setItem('appv4_tva', TVA);
+  nextVenteId = Math.max(0,...ventes.map(v=>v.id),...commandesStock.map(c=>c.venteId))+1;
+  appStorage.setItem('appv4_produits', JSON.stringify(produits));
+  appStorage.setItem('appv4_stock', JSON.stringify(stock));
+  appStorage.setItem('appv4_ventes', JSON.stringify(ventes));
+  appStorage.setItem('appv4_commandesStock', JSON.stringify(commandesStock));
+  appStorage.setItem('appv4_tva', TVA);
   // Refresh whatever section is visible
   const active = document.querySelector('.section.active');
   if (active) {
@@ -707,6 +723,7 @@ function dbxApplyRemoteData(data) {
     showSection(id);
   }
   dbxSuppressNextRemoteApply = false;
+  renderCommandes();
 }
 
 async function dbxManualSync() {
@@ -1727,19 +1744,21 @@ const DEFAULT_STOCK = {
 
 function loadData(){
   return{
-    produits:JSON.parse(localStorage.getItem('appv4_produits')||'null')||JSON.parse(JSON.stringify(DEFAULT_PRODUCTS)),
-    stock:JSON.parse(localStorage.getItem('appv4_stock')||'null')||JSON.parse(JSON.stringify(DEFAULT_STOCK)),
-    ventes:JSON.parse(localStorage.getItem('appv4_ventes')||'[]'),
+    produits:JSON.parse(appStorage.getItem('appv4_produits')||'null')||JSON.parse(JSON.stringify(DEFAULT_PRODUCTS)),
+    stock:JSON.parse(appStorage.getItem('appv4_stock')||'null')||JSON.parse(JSON.stringify(DEFAULT_STOCK)),
+    ventes:JSON.parse(appStorage.getItem('appv4_ventes')||'[]'),
+    commandesStock:JSON.parse(appStorage.getItem('appv4_commandesStock')||'[]'),
   };
 }
-let{produits,stock,ventes}=loadData();
+let{produits,stock,ventes,commandesStock}=loadData();
 let nextProdId=produits.length?Math.max(...produits.map(p=>p.id))+1:1;
-let nextVenteId=ventes.length?Math.max(...ventes.map(v=>v.id))+1:1;
+let nextVenteId=Math.max(0,...ventes.map(v=>v.id),...commandesStock.map(c=>c.venteId))+1;
 let editingProdId=null;
 function save(){
-  localStorage.setItem('appv4_produits',JSON.stringify(produits));
-  localStorage.setItem('appv4_stock',JSON.stringify(stock));
-  localStorage.setItem('appv4_ventes',JSON.stringify(ventes));
+  appStorage.setItem('appv4_produits',JSON.stringify(produits));
+  appStorage.setItem('appv4_stock',JSON.stringify(stock));
+  appStorage.setItem('appv4_ventes',JSON.stringify(ventes));
+  appStorage.setItem('appv4_commandesStock',JSON.stringify(commandesStock));
   dbxScheduleUpload();
 }
 function sKey(pid,c,m,t){return`${pid}||${c}||${m}||${t}`;}
@@ -1751,10 +1770,11 @@ function showSection(id){
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('sec-'+id).classList.add('active');
-  const labels=['ventes','historique','stock','produits','mensuel','stats','recommandations'];
+  const labels=['ventes','historique','stock','commandes','produits','mensuel','stats','recommandations'];
   const idx=labels.indexOf(id);
   if(idx>=0)document.querySelectorAll('.nav-item')[idx].classList.add('active');
   if(id==='stock')renderStock();
+  if(id==='commandes')renderCommandes();
   if(id==='historique')renderHistorique();
   if(id==='produits')renderProduits();
   if(id==='stats')renderStats();
@@ -1830,8 +1850,8 @@ function calcPrix(){
   const stockWeight = stockInsuffisant ? '800' : '600';
 
   const stockAlertHtml = stockInsuffisant
-    ? `<div class="alert warning" style="background:var(--danger-bg);border-color:#e8b4af;color:var(--danger);margin-bottom:0;margin-top:.75rem;font-weight:600">
-        <i class="fas fa-triangle-exclamation"></i> Stock insuffisant : il ne reste que <strong>${dispo}</strong> en ${c} / ${m} / ${t}, vous demandez ${qty}.
+    ? `<div class="alert warning" style="margin-bottom:0;margin-top:.75rem">
+        <i class="fas fa-triangle-exclamation"></i> <div>Vente possible : <strong>${dispo}</strong> disponible(s), <strong>${qty-dispo}</strong> à commander. Une ligne sera créée dans « Commande stock ». Renseignez le client pour assurer son suivi.</div>
       </div>` : '';
 
   box.style.display='block';
@@ -1849,12 +1869,12 @@ function calcPrix(){
   `;
   document.getElementById('stock-alert-vente').innerHTML = stockAlertHtml;
 
-  // Empêche visuellement l'enregistrement tant que le stock est insuffisant
+  // Une rupture n'empêche plus la vente : le manque sera commandé séparément.
   const btnEnregistrer = document.getElementById('btn-enregistrer-vente');
   if (btnEnregistrer) {
-    btnEnregistrer.disabled = !!stockInsuffisant;
-    btnEnregistrer.style.opacity = stockInsuffisant ? '.5' : '1';
-    btnEnregistrer.style.cursor = stockInsuffisant ? 'not-allowed' : 'pointer';
+    btnEnregistrer.disabled = false;
+    btnEnregistrer.style.opacity = '1';
+    btnEnregistrer.style.cursor = 'pointer';
   }
 }
 
@@ -1873,10 +1893,17 @@ function ajouterVente(){
   const remise=+document.getElementById('v-remise').value||0;
   const remiseType=document.getElementById('v-remise-type').value;
   const note=document.getElementById('v-note').value.trim();
-  if(!qty||qty<1||!prixHT||!couleur||!motif||!taille){flash('v-flash','Veuillez remplir tous les champs','err');return;}
+  if(!Number.isSafeInteger(qty)||qty<1||!Number.isFinite(prixHT)||prixHT<=0||!date||!couleur||!motif||!taille){flash('v-flash','Date, article, quantité entière positive et prix positif requis','err');return;}
+  if(remise<0 || !Number.isFinite(remise) || (remiseType==='pct' && remise>100)){flash('v-flash','Remise invalide','err');return;}
   const prod=produits.find(p=>p.id===pid);
+  if(!prod)return;
   const dispo=getStock(pid,couleur,motif,taille);
-  if(qty>dispo){flash('v-flash',`⚠ Stock insuffisant : ${dispo} disponible(s) en ${couleur} / ${motif} / ${taille}, vous demandez ${qty}.`,'err');return;}
+  const preleveStock=Math.min(qty,Math.max(0,dispo));
+  const manque=qty-preleveStock;
+  if(manque && !document.getElementById('v-client').value.trim()){
+    flash('v-flash','Indiquez le client pour rattacher la commande stock à cette vente.','err');
+    document.getElementById('v-client').focus();return;
+  }
   const prixTTC=htToTtc(prixHT);
   const caTTCbrut=prixTTC*qty;
   let remiseMontantTTC=0;
@@ -1886,9 +1913,15 @@ function ajouterVente(){
   const remiseMontantHTreelle=ttcToHt(remiseMontantTTC);
   const frais=type==='TPE Physique'?caTTCnet*0.0175:caTTCnet*0.015+0.25;
   const marge=parseFloat(((prixHT-prod.achat)*qty - remiseMontantHTreelle - frais).toFixed(2));
-  ventes.push({id:nextVenteId++,date,client,type,envoi,produitId:pid,produitNom:prod.nom,couleur,motif,taille,qty,prixHT,prixTTC:parseFloat(prixTTC.toFixed(2)),remise,remiseType,remiseMontantHT:parseFloat(remiseMontantHTreelle.toFixed(2)),remiseMontantTTC:parseFloat(remiseMontantTTC.toFixed(2)),caHT:caHTnet,caTTC:caTTCnet,marge,tvaRate:TVA,note});
-  setStock(pid,couleur,motif,taille,dispo-qty);save();
-  flash('v-flash',`Vente enregistrée — stock mis à jour (${dispo-qty} restant${dispo-qty!==1?'s':''})`,'ok');
+  const venteId=nextVenteId++;
+  ventes.push({id:venteId,date,client,type,envoi,produitId:pid,produitNom:prod.nom,couleur,motif,taille,qty,preleveStock,prixHT,prixTTC:parseFloat(prixTTC.toFixed(2)),remise,remiseType,remiseMontantHT:parseFloat(remiseMontantHTreelle.toFixed(2)),remiseMontantTTC:parseFloat(remiseMontantTTC.toFixed(2)),caHT:caHTnet,caTTC:caTTCnet,marge,tvaRate:TVA,note});
+  if(manque)commandesStock.push({
+    id:crypto.randomUUID(),venteId,date,client,produitId:pid,produitNom:prod.nom,couleur,motif,taille,
+    qty:manque,recue:0,statut:'a_commander',createdAt:new Date().toISOString()
+  });
+  stock[sKey(pid,couleur,motif,taille)]=Math.max(0,dispo-preleveStock);
+  save();renderCommandes();
+  flash('v-flash',manque?`Vente enregistrée : ${manque} article(s) ajouté(s) dans Commande stock.`:`Vente enregistrée : stock mis à jour (${dispo-preleveStock} restant(s)).`,'ok');
   document.getElementById('v-qty').value=1;
   document.getElementById('v-client').value='';
   document.getElementById('v-note').value='';
@@ -1932,9 +1965,9 @@ function renderHistorique(){
   document.getElementById('ventes-count').textContent=`— ${ventes.length} vente(s)`;
   if(!ventes.length){tbody.innerHTML='<tr class="empty-row"><td colspan="16">Aucune vente enregistrée</td></tr>';return;}
   tbody.innerHTML=[...ventes].reverse().map(v=>`<tr>
-    <td>${v.date}</td><td>${v.client}</td>
+    <td>${escapeHtml(v.date)}</td><td>${escapeHtml(v.client)}</td>
     <td><span class="badge ${v.type==='TPE Physique'?'tpe':'web'}">${v.type==='TPE Physique'?'TPE':'Web'}</span></td>
-    <td>${v.produitNom}</td>
+    <td>${escapeHtml(v.produitNom)}${commandesStock.some(c=>c.venteId===v.id&&c.statut!=='annulee'&&c.recue<c.qty)?'<br><span class="order-status pending">Approvisionnement en cours</span>':''}</td>
     <td>${colorDot(v.couleur)}${v.couleur}</td>
     <td><span class="motif-pill">${v.motif}</span></td>
     <td><span class="size-pill">${v.taille}</span></td>
@@ -1945,17 +1978,21 @@ function renderHistorique(){
     <td style="font-weight:600">${v.caHT.toFixed(2)} €</td>
     <td>${v.caTTC.toFixed(2)} €</td>
     <td style="color:var(--success)">${v.marge.toFixed(2)} €</td>
-    <td style="color:var(--text-muted);font-size:12px">${v.note||''}</td>
-    <td><button class="btn sm danger" onclick="supprimerVente(${v.id})"><i class="fas fa-undo"></i></button></td>
+    <td style="color:var(--text-muted);font-size:12px">${escapeHtml(v.note||'')}</td>
+    <td><button class="btn sm danger" aria-label="Annuler la vente ${v.id}" onclick="supprimerVente(${v.id})"><i class="fas fa-undo"></i></button></td>
   </tr>`).join('');
 }
 function supprimerVente(id){
-  if(!confirm('Annuler cette vente ? Le stock sera remis à jour.'))return;
   const v=ventes.find(x=>x.id===id);
   if(!v)return;
-  setStock(v.produitId,v.couleur,v.motif,v.taille,getStock(v.produitId,v.couleur,v.motif,v.taille)+v.qty);
+  const liees=commandesStock.filter(c=>c.venteId===id && c.statut!=='annulee');
+  const enCours=liees.some(c=>c.statut==='commandee'&&c.recue<c.qty);
+  if(!confirm('Annuler cette vente ? Seules les quantités réellement prélevées ou reçues seront remises en stock.'+(enCours?'\nAttention : une commande a déjà été envoyée à The Hive. Elle reste à suivre ; contactez le fournisseur pour l’annuler ou réceptionnez-la en stock libre.':'')))return;
+  const retour=(v.preleveStock??v.qty)+liees.reduce((s,c)=>s+(c.recue||0),0);
+  stock[sKey(v.produitId,v.couleur,v.motif,v.taille)]=getStock(v.produitId,v.couleur,v.motif,v.taille)+retour;
+  liees.forEach(c=>{c.venteAnnulee=true;if(c.statut==='a_commander')c.statut='annulee';});
   ventes=ventes.filter(x=>x.id!==id);
-  save();renderHistorique();renderMetrics();checkAlerts();
+  save();renderHistorique();renderMetrics();checkAlerts();renderCommandes();
 }
 
 // ─── Stock ────────────────────────────────────────────────────────────────────
@@ -2384,6 +2421,10 @@ function renderRecommandations(){
     : `<div style="color:var(--success);font-size:13px;padding:.5rem 0"><i class="fas fa-check-circle"></i> Tous vos articles ont du stock.</div>`;
 }
 
+// Les fonctions Commande stock sont chargées avant l'initialisation.
+</script>
+<script src="commandes.js"></script>
+<script>
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initDate();
 setupTagInput('couleurs');
@@ -2391,6 +2432,7 @@ setupTagInput('motifs');
 buildProduitSelect();
 renderMetrics();
 checkAlerts();
+initCommandes();
 dbxInit();
 </script>
 </body>
