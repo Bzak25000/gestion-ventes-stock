@@ -9,6 +9,31 @@ main { min-width:0; width:100%; }
 .orders-toolbar input[type=search],.orders-toolbar select { padding:9px 12px; border:1px solid var(--border-strong); border-radius:var(--radius); background:var(--surface); color:var(--text); font:inherit; max-width:100%; }
 .orders-toolbar input[type=search] { flex:1; min-width:160px; }
 .orders-toolbar .btn { margin-left:auto; }
+.orders-toolbar #mark-orders-done { margin-left:0; }
+.order-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+.order-tabs .btn { min-height:40px; }
+.order-tabs span { font-variant-numeric:tabular-nums; }
+.order-target-field { margin-bottom:20px; }
+.order-target-field select { width:100%; max-width:100%; }
+.client-cart { margin:20px 0; padding:16px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); }
+.cart-table { width:100%; overflow-x:auto; margin:12px 0; }
+.cart-table table { width:100%; min-width:560px; }
+.cart-table td { white-space:normal; vertical-align:middle; }
+.cart-table small { color:var(--text-secondary); }
+.cart-total { display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; padding-top:12px; }
+.client-order-group { border-top:1px solid var(--border); padding:14px 0; }
+.client-order-group summary { cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.client-order-group summary small { display:block; color:var(--text-secondary); margin-top:4px; }
+.client-order-group summary::before { content:'›'; font-size:20px; color:var(--accent); }
+.client-order-group[open] summary::before { content:'⌄'; }
+.client-order-group summary span { flex:1; }
+.client-order-group > .btn { margin-top:8px; }
+.order-target-field select,.client-order-group summary { overflow-wrap:anywhere; }
+@media(max-width:640px) {
+  .client-cart { padding:12px; }
+  .client-order-group summary { flex-wrap:wrap; }
+  .btn-row .btn { white-space:normal; text-align:center; }
+}
 .order-table { overflow-x:auto; }
 .order-table table { min-width:950px; width:100%; }
 .order-table th,.order-table td { padding:12px 10px; }

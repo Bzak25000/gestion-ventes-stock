@@ -176,7 +176,7 @@ tbody tr:hover { background:var(--surface-2); }
 @media(max-width:900px){ .metrics{grid-template-columns:repeat(2,1fr)} .g4,.g5,.g6{grid-template-columns:1fr 1fr} .g3{grid-template-columns:1fr 1fr} .stock-grid{grid-template-columns:1fr} }
 @media(max-width:640px){ .layout{flex-direction:column} nav{width:100%;height:auto;position:static;display:flex;overflow-x:auto;padding:.5rem;border-right:none;border-bottom:1px solid var(--border)} .nav-label{display:none} .nav-item{border-left:none;border-bottom:3px solid transparent;padding:6px 10px;white-space:nowrap;font-size:12px} .nav-item.active{border-bottom-color:var(--accent);border-left-color:transparent} main{padding:1rem} .metrics{grid-template-columns:repeat(2,1fr)} .g2,.g3,.g4,.g5,.g6{grid-template-columns:1fr} }
 </style>
-<link rel="stylesheet" href="commandes.css">
+<link rel="stylesheet" href="commandes.css?v=3">
 </head>
 <body>
 
@@ -214,7 +214,7 @@ tbody tr:hover { background:var(--surface-2); }
 
 <!-- ===== VENTES ===== -->
 <div id="sec-ventes" class="section active">
-  <div class="page-title"><i class="fas fa-cash-register"></i> Enregistrer une vente</div>
+  <div class="page-title"><i class="fas fa-cash-register"></i> Enregistrer une commande client</div>
 
   <div id="dbx-banner-zone"></div>
 
@@ -229,17 +229,18 @@ tbody tr:hover { background:var(--surface-2); }
   <div class="metrics">
     <div class="metric"><div class="metric-label">CA HT total</div><div class="metric-value green" id="m-ca-ht">0,00 €</div><div class="metric-sub" id="m-ca-ttc-sub">0,00 € TTC</div></div>
     <div class="metric"><div class="metric-label">Marge brute</div><div class="metric-value blue" id="m-marge">0,00 €</div><div class="metric-sub">après frais</div></div>
-    <div class="metric"><div class="metric-label">Ventes du jour</div><div class="metric-value" id="m-today">0</div><div class="metric-sub" id="m-today-ca">0,00 € HT</div></div>
+    <div class="metric"><div class="metric-label">Commandes du jour</div><div class="metric-value" id="m-today">0</div><div class="metric-sub" id="m-today-ca">0,00 € HT</div></div>
     <div class="metric"><div class="metric-label">Unités vendues</div><div class="metric-value orange" id="m-units">0</div><div class="metric-sub">articles</div></div>
   </div>
 
   <div id="alert-zone"></div>
 
   <div class="card">
-    <div class="card-title"><i class="fas fa-plus-circle"></i> Nouvelle vente</div>
+    <div class="card-title"><i class="fas fa-plus-circle"></i> Articles de la commande</div>
+    <div class="field order-target-field"><label for="client-order-target">Commande client</label><select id="client-order-target" onchange="changerCommandeClient(this.value)"><option value="">Nouvelle commande</option></select><span class="order-note">Créez une commande multi-articles ou complétez une commande déjà enregistrée.</span></div>
     <div class="fg g4">
       <div class="field"><label>Date</label><input type="date" id="v-date"></div>
-      <div class="field"><label>Client</label><input type="text" id="v-client" placeholder="Nom du client"></div>
+      <div class="field"><label for="v-client">Client (requis)</label><input type="text" id="v-client" placeholder="Nom du client" required></div>
       <div class="field"><label>Canal de vente</label>
         <select id="v-type"><option>TPE Physique</option><option>Site Internet</option></select>
       </div>
@@ -278,7 +279,11 @@ tbody tr:hover { background:var(--surface-2); }
     <div id="prix-box" class="prix-box" style="display:none"></div>
     <div id="stock-alert-vente"></div>
     <div class="btn-row">
-      <button class="btn primary" id="btn-enregistrer-vente" onclick="ajouterVente()"><i class="fas fa-check"></i> Enregistrer la vente</button>
+      <button class="btn" id="add-cart-line" onclick="ajouterArticlePanier()"><i class="fas fa-plus"></i> Ajouter cet article à la commande</button>
+    </div>
+    <div id="client-cart" class="client-cart"></div>
+    <div class="btn-row">
+      <button class="btn primary" id="btn-enregistrer-vente" onclick="ajouterVente()"><i class="fas fa-check"></i> Enregistrer la commande</button>
       <span id="v-flash"></span>
     </div>
   </div>
@@ -288,7 +293,7 @@ tbody tr:hover { background:var(--surface-2); }
 <div id="sec-historique" class="section">
   <div class="page-title"><i class="fas fa-history"></i> Historique des ventes</div>
   <div class="card">
-    <div class="card-title"><i class="fas fa-list"></i> Toutes les ventes <span id="ventes-count" style="font-weight:400;color:var(--text-muted);font-size:12px;"></span></div>
+    <div class="card-title"><i class="fas fa-list"></i> Détail des articles vendus <span id="ventes-count" style="font-weight:400;color:var(--text-muted);font-size:12px;"></span></div>
     <div class="table-wrap">
       <table>
         <thead><tr>
@@ -392,7 +397,7 @@ tbody tr:hover { background:var(--surface-2); }
     </div>
     <div class="table-wrap"><table>
       <thead><tr>
-        <th>Mois</th><th>Ventes</th><th>Unités</th>
+        <th>Mois</th><th>Commandes</th><th>Unités</th>
         <th>CA HT</th><th>TVA collectée</th><th>CA TTC</th>
         <th>Remises</th><th>Marge brute</th><th>Taux de marge</th><th>CA cumulé HT</th>
       </tr></thead>
@@ -692,7 +697,7 @@ async function dbxUpload(payload) {
 }
 
 function dbxBuildPayload() {
-  return { produits, stock, ventes, commandesStock, schemaVersion: 2, tva: TVA, updatedAt: new Date().toISOString() };
+  return { produits, stock, ventes, commandesStock, schemaVersion: 3, tva: TVA, updatedAt: new Date().toISOString() };
 }
 
 function dbxApplyRemoteData(data) {
@@ -724,6 +729,7 @@ function dbxApplyRemoteData(data) {
   }
   dbxSuppressNextRemoteApply = false;
   renderCommandes();
+  if(typeof renderCommandesClients==='function'){renderCommandesClients();renderPanierClient();}
 }
 
 async function dbxManualSync() {
@@ -1880,53 +1886,7 @@ function calcPrix(){
 
 // ─── Ajouter vente ────────────────────────────────────────────────────────────
 function ajouterVente(){
-  const client=document.getElementById('v-client').value.trim()||'Anonyme';
-  const date=document.getElementById('v-date').value;
-  const type=document.getElementById('v-type').value;
-  const envoi=document.getElementById('v-envoi').value;
-  const pid=+document.getElementById('v-produit').value;
-  const couleur=document.getElementById('v-couleur').value;
-  const motif=document.getElementById('v-motif').value;
-  const taille=document.getElementById('v-taille').value;
-  const qty=+document.getElementById('v-qty').value;
-  const prixHT=+document.getElementById('v-prix-ht').value;
-  const remise=+document.getElementById('v-remise').value||0;
-  const remiseType=document.getElementById('v-remise-type').value;
-  const note=document.getElementById('v-note').value.trim();
-  if(!Number.isSafeInteger(qty)||qty<1||!Number.isFinite(prixHT)||prixHT<=0||!date||!couleur||!motif||!taille){flash('v-flash','Date, article, quantité entière positive et prix positif requis','err');return;}
-  if(remise<0 || !Number.isFinite(remise) || (remiseType==='pct' && remise>100)){flash('v-flash','Remise invalide','err');return;}
-  const prod=produits.find(p=>p.id===pid);
-  if(!prod)return;
-  const dispo=getStock(pid,couleur,motif,taille);
-  const preleveStock=Math.min(qty,Math.max(0,dispo));
-  const manque=qty-preleveStock;
-  if(manque && !document.getElementById('v-client').value.trim()){
-    flash('v-flash','Indiquez le client pour rattacher la commande stock à cette vente.','err');
-    document.getElementById('v-client').focus();return;
-  }
-  const prixTTC=htToTtc(prixHT);
-  const caTTCbrut=prixTTC*qty;
-  let remiseMontantTTC=0;
-  if(remise>0) remiseMontantTTC=remiseType==='pct'?caTTCbrut*(remise/100):Math.min(remise,caTTCbrut);
-  const caTTCnet=parseFloat((caTTCbrut-remiseMontantTTC).toFixed(2));
-  const caHTnet=parseFloat(ttcToHt(caTTCnet).toFixed(2));
-  const remiseMontantHTreelle=ttcToHt(remiseMontantTTC);
-  const frais=type==='TPE Physique'?caTTCnet*0.0175:caTTCnet*0.015+0.25;
-  const marge=parseFloat(((prixHT-prod.achat)*qty - remiseMontantHTreelle - frais).toFixed(2));
-  const venteId=nextVenteId++;
-  ventes.push({id:venteId,date,client,type,envoi,produitId:pid,produitNom:prod.nom,couleur,motif,taille,qty,preleveStock,prixHT,prixTTC:parseFloat(prixTTC.toFixed(2)),remise,remiseType,remiseMontantHT:parseFloat(remiseMontantHTreelle.toFixed(2)),remiseMontantTTC:parseFloat(remiseMontantTTC.toFixed(2)),caHT:caHTnet,caTTC:caTTCnet,marge,tvaRate:TVA,note});
-  if(manque)commandesStock.push({
-    id:crypto.randomUUID(),venteId,date,client,produitId:pid,produitNom:prod.nom,couleur,motif,taille,
-    qty:manque,recue:0,statut:'a_commander',createdAt:new Date().toISOString()
-  });
-  stock[sKey(pid,couleur,motif,taille)]=Math.max(0,dispo-preleveStock);
-  save();renderCommandes();
-  flash('v-flash',manque?`Vente enregistrée : ${manque} article(s) ajouté(s) dans Commande stock.`:`Vente enregistrée : stock mis à jour (${dispo-preleveStock} restant(s)).`,'ok');
-  document.getElementById('v-qty').value=1;
-  document.getElementById('v-client').value='';
-  document.getElementById('v-note').value='';
-  document.getElementById('v-remise').value=0;
-  onProduitChange();renderMetrics();checkAlerts();
+  enregistrerCommandeClient();
 }
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────
@@ -1940,7 +1900,7 @@ function renderMetrics(){
   document.getElementById('m-ca-ht').textContent=fmt(caHT);
   document.getElementById('m-ca-ttc-sub').textContent=fmt(caTTC)+' TTC';
   document.getElementById('m-marge').textContent=fmt(marge);
-  document.getElementById('m-today').textContent=tv.length;
+  document.getElementById('m-today').textContent=new Set(tv.map(v=>v.commandeClientId||`vente-${v.id}`)).size;
   document.getElementById('m-today-ca').textContent=fmt(tv.reduce((s,v)=>s+v.caHT,0))+' HT';
   document.getElementById('m-units').textContent=units;
 }
@@ -1961,8 +1921,9 @@ function checkAlerts(){
 
 // ─── Historique ───────────────────────────────────────────────────────────────
 function renderHistorique(){
+  renderCommandesClients();
   const tbody=document.getElementById('historique-body');
-  document.getElementById('ventes-count').textContent=`— ${ventes.length} vente(s)`;
+  document.getElementById('ventes-count').textContent=` · ${ventes.length} ligne(s)`;
   if(!ventes.length){tbody.innerHTML='<tr class="empty-row"><td colspan="16">Aucune vente enregistrée</td></tr>';return;}
   tbody.innerHTML=[...ventes].reverse().map(v=>`<tr>
     <td>${escapeHtml(v.date)}</td><td>${escapeHtml(v.client)}</td>
@@ -2168,10 +2129,10 @@ function buildYearSelect(){
 function renderMensuel(){
   buildYearSelect();
   const year=document.getElementById('mensuel-year').value;
-  const byMonth=Array.from({length:12},()=>({count:0,units:0,caHT:0,caTTC:0,remises:0,marge:0}));
+  const byMonth=Array.from({length:12},()=>({count:0,orders:new Set(),units:0,caHT:0,caTTC:0,remises:0,marge:0}));
   ventes.filter(v=>v.date.startsWith(year)).forEach(v=>{
     const m=parseInt(v.date.slice(5,7))-1;
-    byMonth[m].count++;byMonth[m].units+=v.qty;byMonth[m].caHT+=v.caHT;byMonth[m].caTTC+=v.caTTC;
+    byMonth[m].orders.add(clientOrderKey(v));byMonth[m].count=byMonth[m].orders.size;byMonth[m].units+=v.qty;byMonth[m].caHT+=v.caHT;byMonth[m].caTTC+=v.caTTC;
     byMonth[m].remises+=v.remiseMontantHT||0;byMonth[m].marge+=v.marge;
   });
   const totalCAHT=byMonth.reduce((s,m)=>s+m.caHT,0);
@@ -2423,7 +2384,8 @@ function renderRecommandations(){
 
 // Les fonctions Commande stock sont chargées avant l'initialisation.
 </script>
-<script src="commandes.js"></script>
+<script src="commandes.js?v=3"></script>
+<script src="clients.js?v=3"></script>
 <script>
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initDate();
@@ -2433,6 +2395,7 @@ buildProduitSelect();
 renderMetrics();
 checkAlerts();
 initCommandes();
+initCommandesClients();
 dbxInit();
 </script>
 </body>
