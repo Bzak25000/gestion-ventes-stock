@@ -177,6 +177,7 @@ tbody tr:hover { background:var(--surface-2); }
 @media(max-width:640px){ .layout{flex-direction:column} nav{width:100%;height:auto;position:static;display:flex;overflow-x:auto;padding:.5rem;border-right:none;border-bottom:1px solid var(--border)} .nav-label{display:none} .nav-item{border-left:none;border-bottom:3px solid transparent;padding:6px 10px;white-space:nowrap;font-size:12px} .nav-item.active{border-bottom-color:var(--accent);border-left-color:transparent} main{padding:1rem} .metrics{grid-template-columns:repeat(2,1fr)} .g2,.g3,.g4,.g5,.g6{grid-template-columns:1fr} }
 </style>
 <link rel="stylesheet" href="commandes.css?v=3">
+<link rel="stylesheet" href="logistique.css?v=4">
 </head>
 <body>
 
@@ -193,6 +194,7 @@ tbody tr:hover { background:var(--surface-2); }
   <div class="nav-label">Ventes</div>
   <div class="nav-item active" onclick="showSection('ventes')"><i class="fas fa-cash-register"></i> Enregistrer</div>
   <div class="nav-item" onclick="showSection('historique')"><i class="fas fa-history"></i> Historique</div>
+  <div class="nav-item" onclick="showSection('logistique')"><i class="fas fa-truck"></i> Logistique</div>
   <div class="nav-label">Stock</div>
   <div class="nav-item" onclick="showSection('stock')"><i class="fas fa-boxes"></i> Vue stock <span class="nav-badge" id="nav-badge" style="display:none">!</span></div>
   <div class="nav-label">Catalogue</div>
@@ -697,7 +699,7 @@ async function dbxUpload(payload) {
 }
 
 function dbxBuildPayload() {
-  return { produits, stock, ventes, commandesStock, schemaVersion: 3, tva: TVA, updatedAt: new Date().toISOString() };
+  return { produits, stock, ventes, commandesStock, logistique, schemaVersion: 4, tva: TVA, updatedAt: new Date().toISOString() };
 }
 
 function dbxApplyRemoteData(data) {
@@ -708,6 +710,8 @@ function dbxApplyRemoteData(data) {
   ventes = data.ventes || ventes;
   // Ne pas effacer des commandes locales si une ancienne version du fichier est synchronisée.
   if (Array.isArray(data.commandesStock)) commandesStock = data.commandesStock;
+  if (Array.isArray(data.logistique)) logistique = data.logistique;
+  if(typeof nettoyerLogistique==='function')nettoyerLogistique();
   if (typeof data.tva === 'number') {
     TVA = data.tva;
     const el = document.getElementById('tva-rate');
@@ -719,6 +723,7 @@ function dbxApplyRemoteData(data) {
   appStorage.setItem('appv4_stock', JSON.stringify(stock));
   appStorage.setItem('appv4_ventes', JSON.stringify(ventes));
   appStorage.setItem('appv4_commandesStock', JSON.stringify(commandesStock));
+  appStorage.setItem('appv4_logistique', JSON.stringify(logistique));
   appStorage.setItem('appv4_tva', TVA);
   // Refresh whatever section is visible
   const active = document.querySelector('.section.active');
@@ -730,6 +735,7 @@ function dbxApplyRemoteData(data) {
   dbxSuppressNextRemoteApply = false;
   renderCommandes();
   if(typeof renderCommandesClients==='function'){renderCommandesClients();renderPanierClient();}
+  if(typeof renderLogistique==='function')renderLogistique();
 }
 
 async function dbxManualSync() {
@@ -1754,18 +1760,22 @@ function loadData(){
     stock:JSON.parse(appStorage.getItem('appv4_stock')||'null')||JSON.parse(JSON.stringify(DEFAULT_STOCK)),
     ventes:JSON.parse(appStorage.getItem('appv4_ventes')||'[]'),
     commandesStock:JSON.parse(appStorage.getItem('appv4_commandesStock')||'[]'),
+    logistique:JSON.parse(appStorage.getItem('appv4_logistique')||'[]'),
   };
 }
-let{produits,stock,ventes,commandesStock}=loadData();
+let{produits,stock,ventes,commandesStock,logistique}=loadData();
 let nextProdId=produits.length?Math.max(...produits.map(p=>p.id))+1:1;
 let nextVenteId=Math.max(0,...ventes.map(v=>v.id),...commandesStock.map(c=>c.venteId))+1;
 let editingProdId=null;
 function save(){
+  if(typeof nettoyerLogistique==='function')nettoyerLogistique();
   appStorage.setItem('appv4_produits',JSON.stringify(produits));
   appStorage.setItem('appv4_stock',JSON.stringify(stock));
   appStorage.setItem('appv4_ventes',JSON.stringify(ventes));
   appStorage.setItem('appv4_commandesStock',JSON.stringify(commandesStock));
+  appStorage.setItem('appv4_logistique',JSON.stringify(logistique));
   dbxScheduleUpload();
+  if(typeof renderLogistique==='function')renderLogistique();
 }
 function sKey(pid,c,m,t){return`${pid}||${c}||${m}||${t}`;}
 function getStock(pid,c,m,t){const k=sKey(pid,c,m,t);if(!(k in stock))stock[k]=0;return stock[k];}
@@ -1776,11 +1786,12 @@ function showSection(id){
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('sec-'+id).classList.add('active');
-  const labels=['ventes','historique','stock','commandes','produits','mensuel','stats','recommandations'];
+  const labels=['ventes','historique','logistique','stock','commandes','produits','mensuel','stats','recommandations'];
   const idx=labels.indexOf(id);
   if(idx>=0)document.querySelectorAll('.nav-item')[idx].classList.add('active');
   if(id==='stock')renderStock();
   if(id==='commandes')renderCommandes();
+  if(id==='logistique')renderLogistique();
   if(id==='historique')renderHistorique();
   if(id==='produits')renderProduits();
   if(id==='stats')renderStats();
@@ -2384,8 +2395,9 @@ function renderRecommandations(){
 
 // Les fonctions Commande stock sont chargées avant l'initialisation.
 </script>
-<script src="commandes.js?v=3"></script>
-<script src="clients.js?v=3"></script>
+<script src="commandes.js?v=4"></script>
+<script src="clients.js?v=4"></script>
+<script src="logistique.js?v=4"></script>
 <script>
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initDate();
@@ -2396,6 +2408,7 @@ renderMetrics();
 checkAlerts();
 initCommandes();
 initCommandesClients();
+initLogistique();
 dbxInit();
 </script>
 </body>

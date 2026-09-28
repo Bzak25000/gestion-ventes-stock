@@ -129,12 +129,14 @@ function enregistrerCommandeClient(){
         qty:missing,recue:0,statut:'a_commander',commandeClientId,commandeClientRef,createdAt:new Date().toISOString()});
     }
     // Lors de l'ajout à une vente ancienne, conserver sa référence et la relier explicitement.
+    if(group&&typeof confirmerAjoutLogistique==='function'&&!confirmerAjoutLogistique(group.id))return;
     if(group){
       const oldIds=new Set(group.lignes.map(v=>v.id));
       group.lignes.forEach(v=>{v.commandeClientId=commandeClientId;v.commandeClientRef=commandeClientRef;});
       commandesStock.filter(c=>oldIds.has(c.venteId)).forEach(c=>{c.commandeClientId=commandeClientId;c.commandeClientRef=commandeClientRef;});
     }
     ventes.push(...newSales);commandesStock.push(...newOrders);stock=newStock;nextVenteId=id;
+    const logReouvert=group&&typeof reouvrirLogistiqueApresAjout==='function'?reouvrirLogistiqueApresAjout(group.id):false;
     save();
     const missing=newOrders.reduce((s,c)=>s+c.qty,0);
     panierClient=[];articleClientModifie=false;commandeClientCible='';
@@ -142,7 +144,7 @@ function enregistrerCommandeClient(){
     document.getElementById('v-client').value='';document.getElementById('v-note').value='';
     document.getElementById('v-qty').value=1;document.getElementById('v-remise').value=0;
     initDate();onProduitChange();renderPanierClient();renderCommandesClients();renderCommandes();renderMetrics();checkAlerts();
-    flash('v-flash',`${commandeClientRef} ${group?'complétée':'enregistrée'} : ${newSales.length} ligne(s), ${missing} article(s) à commander.`,'ok');
+    flash('v-flash',`${commandeClientRef} ${group?'complétée':'enregistrée'} : ${newSales.length} ligne(s), ${missing} article(s) à commander.${logReouvert?' Suivi logistique à revalider.':''}`,'ok');
   }catch(error){flash('v-flash',error.message,'err');}
 }
 function renderCommandesClients(){

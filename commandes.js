@@ -89,7 +89,7 @@ function initCommandes() {
   });
   document.getElementById('storage-warning').hidden = storagePersistent;
   document.getElementById('environment-note').textContent = window.location.origin === 'https://bzak25000.github.io'
-    ? 'Commandes clients & stock · Version 3' : 'Aperçu indépendant · Utilisez votre adresse GitHub pour la gestion courante';
+    ? 'Ventes, stock & logistique · Version 4' : 'Aperçu indépendant · Utilisez votre adresse GitHub pour la gestion courante';
   renderCommandes();
 }
 
@@ -327,6 +327,7 @@ function validateData(d) {
     if(clientsParCommande.has(v.commandeClientId)&&clientsParCommande.get(v.commandeClientId)!==metadata)throw Error('Une commande client contient des informations client incohérentes.');
     clientsParCommande.set(v.commandeClientId,metadata);
   }
+  if(d.logistique!==undefined)validerDonneesLogistique(d.logistique);
   return d;
 }
 async function importerDonnees(input) {
@@ -336,8 +337,9 @@ async function importerDonnees(input) {
     if(!confirm(`Remplacer les données actuellement chargées par « ${file.name} » ?\nUne sauvegarde de vos données actuelles sera téléchargée avant le remplacement.${dbxAccessToken?'\nDropbox est connecté : les données importées seront aussi synchronisées.':''}`))return;
     exporterDonnees();
     document.getElementById('order-mail').close();document.getElementById('order-receive').close();
+    document.getElementById('log-dialog')?.close();
     // Un import explicite remplace le jeu complet, contrairement à une synchronisation ancienne.
-    dbxApplyRemoteData({...data,commandesStock:data.commandesStock||[]});
+    dbxApplyRemoteData({...data,commandesStock:data.commandesStock||[],logistique:data.logistique||[]});
     resetPanierClient();
     save();renderMetrics();checkAlerts();renderCommandes();
     alert('Données importées avec succès.');
