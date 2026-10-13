@@ -1,9 +1,9 @@
-// Quantités fournisseur affectées à une vente : les reçus historiques ne sont jamais effacés.
-// Les reçus transférés dans preleveStock ne doivent plus être comptés une seconde fois.
+// Les engagements client chez The Hive ne sont pas des mouvements de stock.
+// Les anciennes réceptions sont archivées par normaliserDestinationsCommandes.
 const copieEdition=value=>JSON.parse(JSON.stringify(value));
 const cleArticle=v=>sKey(v.produitId,v.couleur,v.motif,v.taille);
-const lieeStock=c=>!c.venteAnnulee&&!c.stockLibre&&c.statut!=='annulee';
-const recueReservee=c=>lieeStock(c)?(c.recueAffectee??c.recue??0):0;
+const lieeStock=c=>!pourStock(c)&&!c.venteAnnulee&&!c.stockLibre&&c.statut!=='annulee';
+const recueReservee=()=>0; // Aucune réception fournisseur n'est réservée à une vente.
 const quantiteReservee=c=>lieeStock(c)?(c.qtyAffectee??c.qty):0;
 const attenteReservee=c=>Math.max(0,quantiteReservee(c)-recueReservee(c));
 const empreinteEdition=()=>JSON.stringify({produits,stock,ventes,commandesStock,logistique});
@@ -15,13 +15,13 @@ function besoinNonCouvert(v,data={commandesStock}){
   return Math.max(0,v.qty-(v.preleveStock??v.qty)-couvert);
 }
 function articleManquant(v){
-  const received=commandesStock.filter(c=>c.venteId===v.id&&cleArticle(c)===cleArticle(v)).reduce((s,c)=>s+recueReservee(c),0);
+  const received=commandesStock.filter(c=>c.venteId===v.id&&cleArticle(c)===cleArticle(v)).reduce((s,c)=>s+(!pourStock(c)&&c.statut==='commandee'?quantiteReservee(c):recueReservee(c)),0);
   return Math.max(0,v.qty-(v.preleveStock??v.qty)-received);
 }
 function articleApproEnCours(v){return articleManquant(v)>0;}
 function nouvelleLigneStock(v,qty){
   return {id:crypto.randomUUID(),venteId:v.id,date:v.date,client:v.client,produitId:v.produitId,produitNom:v.produitNom,
-    couleur:v.couleur,motif:v.motif,taille:v.taille,qty,recue:0,statut:'a_commander',
+    couleur:v.couleur,motif:v.motif,taille:v.taille,qty,recue:0,statut:'a_commander',destination:'client',
     ...(v.commandeClientId?{commandeClientId:v.commandeClientId,commandeClientRef:v.commandeClientRef}:{}),
     createdAt:new Date().toISOString()};
 }
@@ -63,7 +63,8 @@ function preparerEditionClient(group,header,lines){
     for(const c of related){
       data.stock[cleArticle(c)]=(data.stock[cleArticle(c)]||0)+recueReservee(c);
       if(c.statut==='a_commander')continue;
-      c.recueAffectee=0;c.qtyAffectee=0;c.stockLibre=true;
+      c.recueAffectee=0;c.qtyAffectee=0;c.stockLibre=pourStock(c);
+      if(!pourStock(c))c.modificationFournisseurAConfirmer=true;
       if(!lines.some(l=>l.id===v.id))c.venteAnnulee=true;
     }
     const pendingIds=new Set(related.filter(c=>c.statut==='a_commander').map(c=>c.id));
@@ -76,13 +77,14 @@ function preparerEditionClient(group,header,lines){
     delete v.editKey;
     if(!original||changed.has(original.id)){
       const key=cleArticle(v),available=Math.max(0,data.stock[key]||0);
-      v.preleveStock=Math.min(v.qty,available);data.stock[key]=available-v.preleveStock;
-      let missing=v.qty-v.preleveStock;
-      // Conserver les engagements déjà envoyés pour la même ligne et la même déclinaison.
-      if(original)for(const c of data.commandesStock.filter(c=>c.venteId===original.id&&c.statut==='commandee'&&cleArticle(c)===key&&!c.venteAnnulee)){
-        const qty=Math.min(missing,remainingOrder(c));
-        c.qtyAffectee=qty;c.recueAffectee=0;c.stockLibre=qty===0;missing-=qty;
+      let missing=v.qty;
+      // Les engagements client chez The Hive sont prioritaires et ne transitent pas par le stock.
+      if(original)for(const c of data.commandesStock.filter(c=>c.venteId===original.id&&!pourStock(c)&&c.statut==='commandee'&&cleArticle(c)===key&&!c.venteAnnulee)){
+        const qty=Math.min(missing,c.qty);c.qtyAffectee=qty;c.recueAffectee=0;missing-=qty;
       }
+      v.preleveStock=Math.min(missing,available);data.stock[key]=available-v.preleveStock;
+      missing-=v.preleveStock;
+      // Un réapprovisionnement stock ne couvre pas une vente avant son entrée physique.
       if(missing)data.commandesStock.push(nouvelleLigneStock(v,missing));
     }
     if(reprice){
@@ -102,9 +104,10 @@ function preparerEditionClient(group,header,lines){
   if(physical)revaliderLogistique(data,group.id,'Articles ou quantités modifiés : suivi à revalider');
   const logistics=data.logistique.find(l=>l.commandeClientId===group.id);
   if(logistics&&header.envoi!==group.envoi)logistics.modeLivraison=header.envoi==='non'?'retrait':'livraison';
-  const surplus=data.commandesStock.filter(c=>ids.has(c.venteId)&&c.statut==='commandee')
+  const surplus=data.commandesStock.filter(c=>ids.has(c.venteId)&&pourStock(c)&&c.statut==='commandee')
     .reduce((s,c)=>s+Math.max(0,remainingOrder(c)-attenteReservee(c)),0);
-  return {data,next,physical,surplus,newSales};
+  const suiviHive=data.commandesStock.some(c=>ids.has(c.venteId)&&!pourStock(c)&&c.modificationFournisseurAConfirmer);
+  return {data,next,physical,surplus,suiviHive,newSales};
 }
 function appliquerEdition(data,next=nextVenteId){
   // Sauvegarde utilisateur déclenchée avant le remplacement, sans jetons ni secrets.
@@ -121,7 +124,7 @@ function appliquerEdition(data,next=nextVenteId){
   if(active)showSection(active);
 }
 function avertissementEdition(plan){
-  return `${plan.physical?'\nLe stock et les besoins de réapprovisionnement seront recalculés. Le suivi logistique sera à revalider.':''}${plan.surplus?`\nATTENTION : ${plan.surplus} article(s) déjà commandé(s) ne sont plus réservés à cette vente. Leur réception alimentera le stock libre. Contactez The Hive si vous souhaitez les annuler.`:''}\nUne sauvegarde JSON est téléchargée avant application. Aucun mail ni remboursement n’est envoyé.`;
+  return `${plan.physical?'\nLes prélèvements réels et les besoins de commande seront recalculés. Le suivi logistique sera à revalider.':''}${plan.surplus?`\nATTENTION : ${plan.surplus} article(s) pour le stock sont à suivre auprès du fournisseur.`:''}${plan.suiviHive?'\nLa commande client déjà passée reste chez The Hive, sans retour ni entrée en stock. Prévenez The Hive de la modification ou de l’annulation.':''}\nUne sauvegarde JSON est téléchargée avant application. Aucun mail ni remboursement n’est envoyé.`;
 }
 function supprimerCommandeClient(id){
   const group=groupesCommandesClients().find(g=>g.id===id);if(!group)return;
@@ -195,7 +198,9 @@ function ouvrirEditionStock(id){
   document.getElementById('edit-stock-qty').value=c.qty;document.getElementById('edit-stock-qty').min=Math.max(1,c.recue);
   document.getElementById('edit-stock-reference').value=c.reference||'';
   document.getElementById('edit-stock-note').value=c.noteFournisseur||'';
-  document.getElementById('edit-stock-received').textContent=`${c.recue} article(s) déjà reçu(s). Le total ne peut pas être inférieur à cette quantité. L’article et le client se corrigent depuis la commande client liée.`;
+  document.getElementById('edit-stock-received').textContent=pourStock(c)
+    ?`${c.recue} article(s) déjà reçu(s) pour le stock. Le total ne peut pas être inférieur à cette quantité.`
+    :'Commande destinée au client, gérée par The Hive : aucune réception à saisir et aucune entrée en stock. L’article et le client se corrigent depuis la commande client liée.';
   document.getElementById('edit-stock-feedback').textContent='';
   document.getElementById('edit-stock-dialog').showModal();
 }
@@ -213,14 +218,14 @@ function enregistrerEditionStock(event){
       wanted=Math.max(0,v.qty-(v.preleveStock??v.qty)-data.commandesStock.filter(x=>x.id!==c.id&&x.venteId===v.id).reduce((s,x)=>s+quantiteReservee(x),0));
     }
     c.qty=qty;c.recueAffectee=received;c.qtyAffectee=Math.min(wanted,received+remainingOrder(c));
-    if(c.statut==='recue'&&qty>c.recue)c.statut='commandee';
-    if(c.statut==='commandee'&&qty===c.recue)c.statut='recue';
+    if(pourStock(c)&&c.statut==='recue'&&qty>c.recue)c.statut='commandee';
+    if(pourStock(c)&&c.statut==='commandee'&&qty===c.recue)c.statut='recue';
     c.reference=document.getElementById('edit-stock-reference').value.trim();c.noteFournisseur=document.getElementById('edit-stock-note').value.trim();
     if(qty!==oldQty&&['commandee','recue'].includes(c.statut))c.modificationFournisseurAConfirmer=true;
     c.modifieeAt=new Date().toISOString();
     if(v&&qty!==oldQty)revaliderLogistique(data,clientOrderKey(v),'Quantité fournisseur modifiée : suivi à revalider');
     const missing=v?besoinNonCouvert(v,data):0;
-    if(!confirm(`Modifier cette ligne de commande stock ?\n${c.produitNom} · ${qty} article(s), dont ${c.recue} reçu(s).${missing?`\n${missing} article(s) de la vente ne seront plus couverts par une commande stock.`:''}\nLa vente client et son montant ne sont pas modifiés.${c.modificationFournisseurAConfirmer?'\nContactez The Hive pour confirmer la nouvelle quantité. Aucun mail ne sera envoyé.':''}\nUne sauvegarde JSON est téléchargée avant application.`))return;
+    if(!confirm(`Modifier cette ligne de commande ?\n${c.produitNom} · ${qty} article(s)${pourStock(c)?`, dont ${c.recue} reçu(s)`:' pour le client, hors stock'}.${missing?`\n${missing} article(s) de la vente ne seront plus couverts par une commande fournisseur.`:''}\nLa vente client et son montant ne sont pas modifiés.${c.modificationFournisseurAConfirmer?'\nContactez The Hive pour confirmer la nouvelle quantité. Aucun mail ne sera envoyé.':''}\nUne sauvegarde JSON est téléchargée avant application.`))return;
     appliquerEdition(data);document.getElementById('edit-stock-dialog').close();
   }catch(error){flash('edit-stock-feedback',error.message,'err');}
 }
@@ -231,7 +236,7 @@ function supprimerCommandeStock(id){
   data.commandesStock=data.commandesStock.filter(c=>c.id!==id);
   const missing=v?besoinNonCouvert(v,data):0;
   if(v)revaliderLogistique(data,clientOrderKey(v),'Ligne fournisseur supprimée : suivi à revalider');
-  if(!confirm(`Supprimer cette ligne de commande stock ?\n${c.produitNom} · ${c.couleur} · ${c.motif} · ${c.taille}\nClient : ${c.client} · Quantité : ${c.qty}, reçue : ${c.recue}.\nLa vente reste enregistrée. Les articles déjà reçus ne sont pas retirés du stock ni de la réservation client.${missing?`\nATTENTION : ${missing} article(s) de la vente resteront sans commande stock.`:''}${c.statut!=='a_commander'?'\nCette action N’ANNULE PAS la commande chez The Hive. Contactez le fournisseur si nécessaire.':''}\nUne sauvegarde JSON est téléchargée avant application.`))return;
+  if(!confirm(`Supprimer cette ligne de commande ?\n${c.produitNom} · ${c.couleur} · ${c.motif} · ${c.taille}\nDestination : ${pourStock(c)?'stock BZAK':c.client} · Quantité : ${c.qty}${pourStock(c)?`, reçue : ${c.recue}`:''}.\n${pourStock(c)?'Les articles déjà reçus restent en stock.':'La vente reste enregistrée. Cette suppression ne modifie pas le stock.'}${missing?`\nATTENTION : ${missing} article(s) de la vente resteront sans commande fournisseur.`:''}${c.statut!=='a_commander'?'\nCette action N’ANNULE PAS la commande chez The Hive. Contactez le fournisseur si nécessaire.':''}\nUne sauvegarde JSON est téléchargée avant application.`))return;
   appliquerEdition(data);
 }
 function recreerBesoinsStock(){

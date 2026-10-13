@@ -126,7 +126,7 @@ function enregistrerCommandeClient(){
       newSales.push(sale);newStock[key]=dispo-preleveStock;
       if(missing)newOrders.push({id:crypto.randomUUID(),venteId:sale.id,date,client,
         produitId:line.produitId,produitNom:line.produitNom,couleur:line.couleur,motif:line.motif,taille:line.taille,
-        qty:missing,recue:0,statut:'a_commander',commandeClientId,commandeClientRef,createdAt:new Date().toISOString()});
+        qty:missing,recue:0,statut:'a_commander',destination:'client',commandeClientId,commandeClientRef,createdAt:new Date().toISOString()});
     }
     // Lors de l'ajout à une vente ancienne, conserver sa référence et la relier explicitement.
     if(group&&typeof confirmerAjoutLogistique==='function'&&!confirmerAjoutLogistique(group.id))return;

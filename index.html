@@ -700,7 +700,7 @@ async function dbxUpload(payload) {
 }
 
 function dbxBuildPayload() {
-  return { produits, stock, ventes, commandesStock, logistique, schemaVersion: 5, tva: TVA, updatedAt: new Date().toISOString() };
+  return { produits, stock, ventes, commandesStock, logistique, schemaVersion: 6, tva: TVA, updatedAt: new Date().toISOString() };
 }
 
 function dbxApplyRemoteData(data) {
@@ -711,6 +711,7 @@ function dbxApplyRemoteData(data) {
   ventes = data.ventes || ventes;
   // Ne pas effacer des commandes locales si une ancienne version du fichier est synchronisée.
   if (Array.isArray(data.commandesStock)) commandesStock = data.commandesStock;
+  if(typeof normaliserDestinationsCommandes==='function')normaliserDestinationsCommandes();
   if (Array.isArray(data.logistique)) logistique = data.logistique;
   if(typeof nettoyerLogistique==='function')nettoyerLogistique();
   if (typeof data.tva === 'number') {
@@ -2387,12 +2388,14 @@ function renderRecommandations(){
 
 // Les fonctions Commande stock sont chargées avant l'initialisation.
 </script>
-<script src="commandes.js?v=5"></script>
-<script src="clients.js?v=5"></script>
-<script src="logistique.js?v=5"></script>
-<script src="edition.js?v=5"></script>
+<script src="commandes.js?v=6"></script>
+<script src="clients.js?v=6"></script>
+<script src="logistique.js?v=6"></script>
+<script src="edition.js?v=6"></script>
+<script src="approvisionnement.js?v=6"></script>
 <script>
 // ─── Boot ─────────────────────────────────────────────────────────────────────
+normaliserDestinationsCommandes();
 initDate();
 setupTagInput('couleurs');
 setupTagInput('motifs');
@@ -2403,6 +2406,7 @@ initCommandes();
 initCommandesClients();
 initLogistique();
 initEditionCommandes();
+initApprovisionnement();
 dbxInit();
 </script>
 </body>

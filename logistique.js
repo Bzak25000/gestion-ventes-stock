@@ -116,7 +116,7 @@ function renderLogistique(){
       <div class="log-delivery"><div><span class="log-detail-label">Mode de livraison</span><strong><i class="fas ${['retrait','main_propre'].includes(info.modeLivraison)?'fa-handshake':'fa-truck'}" aria-hidden="true"></i> ${logModeLibelle(info.modeLivraison)}</strong>${info.precisionLivraison?`<p>${escapeHtml(info.precisionLivraison)}</p>`:''}</div>
       <button class="btn" data-log-edit="${escapeHtml(g.id)}">Modifier le suivi</button></div>
       ${info.note?`<p class="log-note-text">${escapeHtml(info.note)}</p>`:''}
-      ${manque?`<p class="log-supply-warning"><i class="fas fa-box-open" aria-hidden="true"></i> ${manque} article(s) restent non réceptionné(s) dans « Commande stock ».</p>`:''}
+      ${manque?`<p class="log-supply-warning"><i class="fas fa-box-open" aria-hidden="true"></i> ${manque} article(s) restent à commander auprès de The Hive. Aucune réception client n’est à saisir.</p>`:''}
       <details class="log-details"><summary>Détail des ${g.lignes.length} ligne(s) de la commande</summary><ul>${g.lignes.map(l=>`<li><span><strong>${escapeHtml(l.produitNom)}</strong><small>${escapeHtml(l.couleur)} · ${escapeHtml(l.motif)} · ${escapeHtml(l.taille)}</small></span><strong>× ${l.qty}</strong></li>`).join('')}</ul></details>
       ${info.updatedAt?`<p class="log-updated">Dernière mise à jour : ${dateSuiviLogistique(info.updatedAt)}</p>`:''}
       ${info.historique?.length?`<details class="log-history"><summary>Historique du suivi (${info.historique.length})</summary><ul>${[...info.historique].reverse().map(h=>`<li>${dateSuiviLogistique(h.at)} · ${logLibelle(h.statut)} · ${logModeLibelle(h.modeLivraison)}${h.raison?` · ${escapeHtml(h.raison)}`:''}</li>`).join('')}</ul></details>`:''}
@@ -149,7 +149,7 @@ function enregistrerSuiviLogistique(event){
   if(modeLivraison==='autre'&&!precisionLivraison){flash('log-form-feedback','Précisez le mode de livraison choisi.','err');return;}
   if(statut==='livre'&&modeLivraison==='a_preciser'){flash('log-form-feedback','Indiquez le mode de livraison avant de marquer la commande livrée.','err');return;}
   const manque=logManque(group);
-  if(['pret','livre'].includes(statut)&&manque&&!confirm(`${manque} article(s) sont encore non réceptionné(s) dans « Commande stock ».\nConfirmer malgré tout « ${logLibelle(statut)} » pour toute la commande ?\nCette action ne met pas à jour les réceptions fournisseur.`))return;
+  if(['pret','livre'].includes(statut)&&manque&&!confirm(`${manque} article(s) restent à commander auprès de The Hive.\nConfirmer malgré tout « ${logLibelle(statut)} » pour toute la commande ?\nCette action ne passe aucune commande fournisseur et ne modifie pas le stock.`))return;
   const old=infosLogistique(group),now=new Date().toISOString();
   const entry={commandeClientId:group.id,statut,modeLivraison,precisionLivraison,note,updatedAt:now,
     historique:[...(old.historique||[]),{at:now,statut,modeLivraison}]};

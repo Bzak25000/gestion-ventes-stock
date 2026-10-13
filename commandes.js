@@ -1,9 +1,22 @@
 const HIVE_EMAIL = 'justin@atelierthehive.fr';
 let preparedOrder = null;
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const remainingOrder = c => Math.max(0, c.qty - (c.recue || 0));
+// La destination est indépendante du statut et ne change jamais lors d'une annulation.
+const pourStock = c => c.destination ? c.destination==='stock' : !!(c.stockLibre||c.venteAnnulee||c.venteId===0);
+const remainingOrder = c => pourStock(c) ? Math.max(0, c.qty - (c.recue || 0)) : c.qty;
 const isPendingOrder = c => c.statut === 'a_commander' && !c.venteAnnulee;
-const orderLabel = c => c.statut === 'annulee' ? 'Annulée' : c.statut === 'recue' ? 'Reçue' : c.statut === 'commandee' ? (c.recue ? 'En attente · réception partielle' : 'En attente') : 'À commander';
+const orderLabel = c => c.statut === 'annulee' ? 'Annulée' : !pourStock(c)&&c.venteAnnulee ? 'À régulariser avec The Hive' : c.statut==='a_commander' ? 'À commander' : !pourStock(c) ? 'Commandée · The Hive' : c.statut === 'recue' ? 'Reçue' : (c.recue ? 'En attente · réception partielle' : 'En attente');
+function normaliserDestinationsCommandes(){
+  for(const c of commandesStock){
+    c.destination=pourStock(c)?'stock':'client';
+    // Conserver les anciennes réceptions pour l'audit, sans mouvement de stock.
+    if(!pourStock(c)&&(c.recue||c.statut==='recue')){
+      c.receptionHistorique=c.receptionHistorique||{recue:c.recue,recueAffectee:c.recueAffectee,receptions:c.receptions||[],statut:c.statut};
+      c.recue=0;c.recueAffectee=0;c.receptions=[];
+      if(c.statut==='recue')c.statut='commandee';
+    }
+  }
+}
 
 function initCommandes() {
   const nav = document.createElement('div');
@@ -17,20 +30,21 @@ function initCommandes() {
   section.innerHTML = `
     <div class="orders-heading">
       <div><h2 class="page-title"><i class="fas fa-clipboard-list"></i> Commande stock</h2>
-      <p class="orders-sub">Les articles manquants, rattachés à chaque vente et à chaque client.</p></div>
-      <span class="order-status sent">Fournisseur : The Hive</span>
+      <p class="orders-sub">Deux circuits distincts : clients gérés par The Hive et réapprovisionnement du stock.</p></div>
+      <button class="btn" onclick="ouvrirCommandePourStock()">Commander pour le stock</button>
     </div>
     <div class="orders-metrics">
       <div class="metric"><div class="metric-label">À commander</div><div class="metric-value orange" id="orders-pending">0</div><div class="orders-sub">article(s)</div></div>
-      <div class="metric"><div class="metric-label">En attente</div><div class="metric-value" id="orders-sent">0</div><div class="orders-sub">article(s) commandé(s)</div></div>
-      <div class="metric"><div class="metric-label">Clients en attente</div><div class="metric-value green" id="orders-clients">0</div><div class="orders-sub">à approvisionner</div></div>
+      <div class="metric"><div class="metric-label">Stock à réceptionner</div><div class="metric-value" id="orders-sent">0</div><div class="orders-sub">article(s) pour le stock</div></div>
+      <div class="metric"><div class="metric-label">Clients · The Hive</div><div class="metric-value green" id="orders-clients">0</div><div class="orders-sub">commande(s) client confiée(s)</div></div>
     </div>
     <div class="alert warning" id="uncovered-stock" hidden></div>
     <div class="card">
       <div class="order-tabs" role="group" aria-label="Statut des commandes">
         <button class="btn" data-order-filter="a_commander" onclick="filterOrders('a_commander')">À commander <span id="tab-pending-count"></span></button>
-        <button class="btn" data-order-filter="commandee" onclick="filterOrders('commandee')">En attente <span id="tab-waiting-count"></span></button>
-        <button class="btn" data-order-filter="recue" onclick="filterOrders('recue')">Reçues</button>
+        <button class="btn" data-order-filter="clients" onclick="filterOrders('clients')">Clients · The Hive</button>
+        <button class="btn" data-order-filter="commandee" onclick="filterOrders('commandee')">Stock · En attente <span id="tab-waiting-count"></span></button>
+        <button class="btn" data-order-filter="recue" onclick="filterOrders('recue')">Stock · Reçues</button>
         <button class="btn" data-order-filter="all" onclick="filterOrders('all')">Historique</button>
       </div>
       <div class="orders-toolbar">
@@ -40,11 +54,11 @@ function initCommandes() {
         <button class="btn primary" id="prepare-order" onclick="preparerCommande()"><i class="fas fa-envelope"></i> Préparer le mail</button>
       </div>
       <div class="order-table"><table>
-        <thead><tr><th><input type="checkbox" id="orders-all" aria-label="Sélectionner toutes les lignes à commander affichées" onchange="selectAllOrders(this.checked)"></th><th>Vente / date</th><th>Article et déclinaison</th><th>Client</th><th>À fournir</th><th>Reçu</th><th>Statut</th><th>Suivi</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="orders-all" aria-label="Sélectionner toutes les lignes à commander affichées" onchange="selectAllOrders(this.checked)"></th><th>Commande / date</th><th>Article et déclinaison</th><th>Destination</th><th>Quantité</th><th id="orders-received-heading">Réception stock</th><th>Statut</th><th>Actions</th></tr></thead>
         <tbody id="orders-body"></tbody>
       </table></div>
-      <p class="order-note">Seule la quantité manquante est commandée. Les réceptions sont réservées au client : elles ne gonflent pas le stock disponible.</p>
-      <p class="order-note">Après avoir passé commande, cliquez sur « Commande faite ». Les lignes passent dans « En attente », où vous pourrez les marquer reçues. Le mail à ${HIVE_EMAIL} reste facultatif et aucun envoi n’est automatique.</p>
+      <p class="order-note">Pour un client : seule la quantité manquante est confiée à The Hive, sans suivi de réception et sans entrée en stock. L’avancement client reste dans « Logistique ».</p>
+      <p class="order-note">Pour le stock : « Commande faite » place la ligne en attente. Chaque réception augmente uniquement le stock disponible. Le mail à ${HIVE_EMAIL} reste à contrôler et à envoyer manuellement.</p>
       <span id="orders-flash" role="status"></span>
     </div>`;
   document.querySelector('main').append(section);
@@ -93,7 +107,7 @@ function initCommandes() {
   });
   document.getElementById('storage-warning').hidden = storagePersistent;
   document.getElementById('environment-note').textContent = window.location.origin === 'https://bzak25000.github.io'
-    ? 'Ventes, stock & logistique · Version 5' : 'Aperçu indépendant · Utilisez votre adresse GitHub pour la gestion courante';
+    ? 'Ventes, stock & logistique · Version 6' : 'Aperçu indépendant · Utilisez votre adresse GitHub pour la gestion courante';
   renderCommandes();
 }
 
@@ -103,8 +117,9 @@ function renderCommandes() {
   const pending = active.filter(isPendingOrder);
   const count = pending.reduce((s,c) => s + remainingOrder(c), 0);
   document.getElementById('orders-pending').textContent = count;
-  document.getElementById('orders-sent').textContent = active.filter(c=>c.statut==='commandee').reduce((s,c)=>s+remainingOrder(c),0);
-  document.getElementById('orders-clients').textContent = new Set(active.filter(c=>attenteReservee(c)>0).map(c=>c.client.trim().toLocaleLowerCase('fr'))).size;
+  const waitingStock=active.filter(c=>pourStock(c)&&c.statut==='commandee');
+  document.getElementById('orders-sent').textContent = waitingStock.reduce((s,c)=>s+remainingOrder(c),0);
+  document.getElementById('orders-clients').textContent = new Set(active.filter(c=>!pourStock(c)&&!c.venteAnnulee&&c.statut==='commandee').map(c=>c.commandeClientId||`vente-${c.venteId}`)).size;
   const badge = document.getElementById('commandes-badge');
   badge.textContent = count; badge.hidden = !count;
   const filter = document.getElementById('orders-filter').value;
@@ -113,20 +128,22 @@ function renderCommandes() {
     el.setAttribute('aria-pressed',String(el.dataset.orderFilter===filter));
   });
   document.getElementById('tab-pending-count').textContent = `(${pending.length})`;
-  document.getElementById('tab-waiting-count').textContent = `(${active.filter(c=>c.statut==='commandee').length})`;
+  document.getElementById('tab-waiting-count').textContent = `(${waitingStock.length})`;
   const search = document.getElementById('orders-search').value.trim().toLocaleLowerCase('fr');
   const rows = commandesStock.filter(c =>
-    (filter === 'all' || (filter === 'active' ? ['a_commander','commandee'].includes(c.statut) : c.statut === filter)) &&
+    (filter === 'all' || (filter==='clients' ? !pourStock(c)&&['commandee','recue'].includes(c.statut) : filter==='a_commander' ? isPendingOrder(c) : pourStock(c)&&c.statut===filter)) &&
     [c.produitNom,c.couleur,c.motif,c.taille,c.client,c.venteId,c.reference,c.commandeClientRef].join(' ').toLocaleLowerCase('fr').includes(search));
+  const showReceived=rows.some(pourStock)||['commandee','recue'].includes(filter);
+  document.getElementById('orders-received-heading').hidden=!showReceived;
   document.getElementById('orders-body').innerHTML = rows.length ? [...rows].reverse().map(c=>`
     <tr>
       <td>${isPendingOrder(c)?`<input type="checkbox" class="order-check" value="${escapeHtml(c.id)}" aria-label="Commander pour ${escapeHtml(c.client)}, vente ${c.venteId}" checked>`:''}</td>
-      <td>${escapeHtml(c.commandeClientRef||`Vente #${c.venteId}`)}<br><small>${escapeHtml(c.date)} · ligne #${c.venteId}</small></td>
+      <td>${escapeHtml(c.commandeClientRef||(c.venteId?`Vente #${c.venteId}`:'Réapprovisionnement'))}<br><small>${escapeHtml(c.date)}</small></td>
       <td class="order-details"><strong>${escapeHtml(c.produitNom)}</strong><small>${escapeHtml(c.couleur)} · ${escapeHtml(c.motif)} · ${escapeHtml(c.taille)}</small></td>
-      <td class="order-details">${escapeHtml(c.client)}${c.venteAnnulee?'<small style="color:var(--danger)">Vente supprimée : suivi fournisseur requis</small>':''}${c.stockLibre?'<small>Réceptions restantes : stock libre</small>':''}${!c.stockLibre&&c.qtyAffectee!==undefined&&remainingOrder(c)>attenteReservee(c)?`<small>${remainingOrder(c)-attenteReservee(c)} article(s) restant(s) pour stock libre</small>`:''}</td>
-      <td><strong>${c.qty}</strong></td><td>${c.recue||0} / ${c.qty}</td>
+      <td class="order-details"><strong>${pourStock(c)?'Stock BZAK':'Client · '+escapeHtml(c.client)}</strong><small>${pourStock(c)?'Entrée en stock à réception':'Géré par The Hive · hors stock'}</small>${c.venteAnnulee?'<small style="color:var(--danger)">Vente supprimée : suivi fournisseur requis</small>':''}</td>
+      <td><strong>${c.qty}</strong></td><td ${showReceived?'':'hidden'}>${pourStock(c)?`${c.recue||0} / ${c.qty}`:'Sans objet'}</td>
       <td><span class="order-status ${isPendingOrder(c)?'pending':c.statut==='recue'?'received':'sent'}">${orderLabel(c)}</span>${c.reference?`<small style="display:block">${escapeHtml(c.reference)}</small>`:''}${c.modificationFournisseurAConfirmer?'<small style="display:block;color:var(--warning)">Modification fournisseur à confirmer</small>':''}${c.noteFournisseur?`<div class="supplier-note">${escapeHtml(c.noteFournisseur)}</div>`:''}</td>
-      <td><div class="order-actions">${isPendingOrder(c)?`<button class="btn sm" data-order-action="done" data-id="${escapeHtml(c.id)}">Commande faite</button>`:''}${c.statut==='commandee'&&remainingOrder(c)>0?`<button class="btn sm" data-order-action="receive" data-id="${escapeHtml(c.id)}">Marquer reçue</button>${c.venteAnnulee?`<button class="btn sm danger" data-order-action="cancel" data-id="${escapeHtml(c.id)}">Annulation fournisseur</button>`:''}`:''}<button class="btn sm" data-order-action="edit" data-id="${escapeHtml(c.id)}">Modifier</button><button class="btn sm danger" data-order-action="delete" data-id="${escapeHtml(c.id)}">Supprimer</button>${c.modificationFournisseurAConfirmer?`<button class="btn sm" data-order-action="ack" data-id="${escapeHtml(c.id)}">Fournisseur informé</button>`:''}</div></td>
+      <td><div class="order-actions">${isPendingOrder(c)?`<button class="btn sm" data-order-action="done" data-id="${escapeHtml(c.id)}">Commande faite</button>`:''}${pourStock(c)&&c.statut==='commandee'&&remainingOrder(c)>0?`<button class="btn sm" data-order-action="receive" data-id="${escapeHtml(c.id)}">Marquer reçue</button>`:''}${c.venteAnnulee&&c.statut==='commandee'?`<button class="btn sm danger" data-order-action="cancel" data-id="${escapeHtml(c.id)}">Annulation fournisseur</button>`:''}<button class="btn sm" data-order-action="edit" data-id="${escapeHtml(c.id)}">Modifier</button><button class="btn sm danger" data-order-action="delete" data-id="${escapeHtml(c.id)}">Supprimer</button>${c.modificationFournisseurAConfirmer?`<button class="btn sm" data-order-action="ack" data-id="${escapeHtml(c.id)}">Fournisseur informé</button>`:''}</div></td>
     </tr>`).join('') : '<tr><td colspan="8"><div class="order-empty"><strong>Aucune commande à afficher</strong>Une vente sans stock suffisant crée automatiquement une ligne ici.<br>Vous pouvez aussi modifier les filtres pour retrouver une commande.</div></td></tr>';
   updateOrderSelection();
   if(typeof renderBesoinsNonCouverts==='function')renderBesoinsNonCouverts();
@@ -139,11 +156,11 @@ function marquerCommandesFaites(id) {
   const rows=id?commandesStock.filter(c=>c.id===id&&isPendingOrder(c)):selectedOrderRows();
   if(!rows.length)return;
   const total=rows.reduce((s,c)=>s+remainingOrder(c),0);
-  if(!confirm(`Confirmez-vous avoir déjà passé commande auprès de The Hive pour ces ${total} article(s) ?\n${rows.length} ligne(s) quitteront « À commander » et passeront dans « En attente ».\nAucun mail ne sera envoyé par cette action.`))return;
+  if(!confirm(`Confirmez-vous avoir déjà passé commande auprès de The Hive pour ces ${total} article(s) ?\nLes lignes clients passeront dans « Clients · The Hive », sans réception à saisir. Les lignes pour le stock passeront dans « Stock · En attente ».\nAucun mail ne sera envoyé par cette action.`))return;
   const reference=`BZAK-${new Date().toISOString().slice(0,10).replaceAll('-','')}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
   rows.forEach(c=>{c.statut='commandee';c.commandeeAt=new Date().toISOString();c.reference=c.reference||reference;c.validationCommande='manuelle';});
   save();renderCommandes();
-  flash('orders-flash',`${rows.length} ligne(s) déplacée(s) dans « En attente ».`,'ok');
+  flash('orders-flash',`${rows.length} ligne(s) commandée(s). Suivi client chez The Hive ; réceptions réservées aux commandes pour le stock.`,'ok');
 }
 function selectedOrderRows() {
   const ids = new Set([...document.querySelectorAll('.order-check:checked')].map(el=>el.value));
@@ -169,7 +186,7 @@ function selectAllOrders(checked) {
   updateOrderSelection();
 }
 function orderFingerprint(rows) {
-  return JSON.stringify(rows.map(c=>[c.id,c.venteId,c.produitNom,c.couleur,c.motif,c.taille,c.client,c.qty,c.recue,c.statut,c.venteAnnulee]));
+  return JSON.stringify(rows.map(c=>[c.id,c.venteId,c.produitNom,c.couleur,c.motif,c.taille,c.client,c.qty,c.recue,c.statut,c.venteAnnulee,c.destination]));
 }
 function preparerCommande() {
   const rows = selectedOrderRows();
@@ -181,7 +198,7 @@ function preparerCommande() {
   document.getElementById('order-subject').value = `BZAK | Commande ${reference} | ${qty} article(s)`;
   document.getElementById('order-body').value = [
     'Bonjour Justin,','',`Voici notre commande ${reference} pour les articles suivants :`,'',
-    ...rows.map((c,i)=>`${i+1}. ${c.produitNom}\n   Couleur : ${c.couleur} | Motif : ${c.motif} | Taille : ${c.taille}\n   Quantité à fournir : ${remainingOrder(c)}\n   Client : ${c.client} | ${c.commandeClientRef||`Vente n° ${c.venteId}`} du ${c.date}`),
+    ...rows.map((c,i)=>`${i+1}. ${c.produitNom}\n   Couleur : ${c.couleur} | Motif : ${c.motif} | Taille : ${c.taille}\n   Quantité à fournir : ${remainingOrder(c)}\n   Destination : ${pourStock(c)?'Réapprovisionnement du stock BZAK':'Client '+c.client+' (hors stock BZAK, suivi par The Hive)'}\n   ${c.commandeClientRef||(c.venteId?`Vente n° ${c.venteId}`:'Commande pour le stock')} du ${c.date}`),
     '',`TOTAL : ${qty} article(s), ${rows.length} ligne(s).`,'',
     'Merci de nous confirmer la disponibilité, le délai et le montant de cette commande.',
     'Les noms des clients sont indiqués pour le repérage des articles ; ils ne constituent pas des instructions de livraison.',
@@ -273,34 +290,31 @@ function confirmerEnvoiCommande() {
   const fields = mailFields();
   rows.forEach(c=>{c.statut='commandee';c.reference=preparedOrder.reference;c.commandeeAt=new Date().toISOString();c.mailConfirme={destinataire:HIVE_EMAIL,objet:fields.subject,message:fields.body};});
   save();closeOrderMail();renderCommandes();
-  flash('orders-flash','Envoi déclaré : lignes déplacées dans « En attente ».','ok');
+  flash('orders-flash','Envoi déclaré : clients confiés à The Hive ; commandes pour le stock en attente de réception.','ok');
 }
 function ouvrirReception(id) {
   const c = commandesStock.find(c=>c.id===id);
-  if (!c || c.statut!=='commandee' || !remainingOrder(c)) return;
+  if (!c || !pourStock(c) || c.statut!=='commandee' || !remainingOrder(c)) return;
   const modal = document.getElementById('order-receive');
   document.getElementById('receive-description').textContent = `${c.produitNom} · ${c.couleur} · ${c.motif} · ${c.taille} · Client : ${c.client}`;
   const input = document.getElementById('receive-qty');
   input.max=remainingOrder(c); input.value=remainingOrder(c);
-  const reservedRemaining=attenteReservee(c);
   document.getElementById('receive-destination').textContent =
-    `Sur le solde restant : ${reservedRemaining} article(s) réservé(s) au client et ${remainingOrder(c)-reservedRemaining} article(s) destiné(s) au stock libre. Les réceptions sont affectées au client en priorité.`;
+    `Les articles réceptionnés seront ajoutés au stock disponible BZAK. Solde restant : ${remainingOrder(c)} article(s).`;
   document.getElementById('receive-flash').textContent='';
   document.getElementById('receive-form').onsubmit = event => {
     event.preventDefault();
     const qty=Number(input.value);
-    if(!Number.isSafeInteger(qty)||qty<1||qty>remainingOrder(c)||c.statut!=='commandee'){
+    if(!pourStock(c)||!Number.isSafeInteger(qty)||qty<1||qty>remainingOrder(c)||c.statut!=='commandee'){
       flash('receive-flash','Quantité invalide ou commande modifiée.','err');return;
     }
     if(!commandesStock.includes(c)){flash('receive-flash','Les données ont changé. Rouvrez cette réception.','err');return;}
-    const reserved=recueReservee(c),allocated=Math.min(qty,attenteReservee(c));
-    const assigned=quantiteReservee(c);
-    c.recue=(c.recue||0)+qty;c.recueAffectee=reserved+allocated;c.qtyAffectee=assigned;
-    if(qty>allocated)stock[sKey(c.produitId,c.couleur,c.motif,c.taille)]=getStock(c.produitId,c.couleur,c.motif,c.taille)+qty-allocated;
+    c.recue=(c.recue||0)+qty;c.recueAffectee=0;c.qtyAffectee=0;
+    stock[sKey(c.produitId,c.couleur,c.motif,c.taille)]=getStock(c.produitId,c.couleur,c.motif,c.taille)+qty;
     if(c.recue===c.qty)c.statut='recue';
     c.receptions=c.receptions||[];c.receptions.push({qty,date:new Date().toISOString()});
     save();modal.close();renderCommandes();calcPrix();checkAlerts();
-    flash('orders-flash',`${qty} article(s) réceptionné(s) : ${allocated} réservé(s) au client, ${qty-allocated} en stock libre.`,'ok');
+    flash('orders-flash',`${qty} article(s) réceptionné(s) et ajouté(s) au stock disponible.`,'ok');
   };
   modal.showModal();
 }
@@ -323,7 +337,8 @@ function validateData(d) {
     typeof c.id==='string'&&Number.isSafeInteger(c.venteId)&&Number.isSafeInteger(c.produitId)&&
     ['date','client','produitNom','couleur','motif','taille'].every(k=>typeof c[k]==='string')&&
     Number.isSafeInteger(c.qty)&&c.qty>0&&Number.isSafeInteger(c.recue)&&c.recue>=0&&c.recue<=c.qty&&
-    ['a_commander','commandee','recue','annulee'].includes(c.statut)
+    ['a_commander','commandee','recue','annulee'].includes(c.statut)&&
+    (c.destination===undefined||['client','stock'].includes(c.destination))
   )))throw Error('Commandes stock invalides.');
   for(const list of [d.produits,d.ventes,d.commandesStock||[]])if(new Set(list.map(x=>x.id)).size!==list.length)throw Error('Identifiants en doublon.');
   for(const row of [...d.ventes,...(d.commandesStock||[])]) {
@@ -348,6 +363,7 @@ async function importerDonnees(input) {
     document.getElementById('order-mail').close();document.getElementById('order-receive').close();
     document.getElementById('log-dialog')?.close();
     document.getElementById('edit-client-dialog')?.close();document.getElementById('edit-stock-dialog')?.close();
+    document.getElementById('stock-create')?.close();
     // Un import explicite remplace le jeu complet, contrairement à une synchronisation ancienne.
     dbxApplyRemoteData({...data,commandesStock:data.commandesStock||[],logistique:data.logistique||[]});
     resetPanierClient();
