@@ -122,7 +122,7 @@ function enregistrerCommandeClient(){
       const dispo=Math.max(0,newStock[key]||0),preleveStock=Math.min(dispo,line.qty);
       const missing=line.qty-preleveStock;
       const sale={...line,...montantsArticleClient(line,type,!group&&index===0),id:id++,date,client,type,envoi,preleveStock,
-        commandeClientId,commandeClientRef,enregistreeAt:new Date().toISOString()};
+        commandeClientId,commandeClientRef,coutAchatUnitaire:produits.find(p=>p.id===line.produitId).achat,enregistreeAt:new Date().toISOString()};
       newSales.push(sale);newStock[key]=dispo-preleveStock;
       if(missing)newOrders.push({id:crypto.randomUUID(),venteId:sale.id,date,client,
         produitId:line.produitId,produitNom:line.produitNom,couleur:line.couleur,motif:line.motif,taille:line.taille,
@@ -160,7 +160,7 @@ function renderCommandesClients(){
       <details class="client-order-group">
         <summary><span><strong>${escapeHtml(g.client)}</strong><small>${escapeHtml(g.ref)} · ${escapeHtml(g.date)} · ${g.lignes.length} ligne(s)</small></span><strong>${fmt(g.lignes.reduce((s,l)=>s+l.caTTC,0))} TTC</strong></summary>
         <div class="cart-table"><table><thead><tr><th>Article</th><th>Déclinaison</th><th>Qté</th><th>Total TTC</th></tr></thead><tbody>${g.lignes.map(l=>`<tr><td>${escapeHtml(l.produitNom)}</td><td>${escapeHtml(l.couleur)} · ${escapeHtml(l.motif)} · ${escapeHtml(l.taille)}</td><td>${l.qty}</td><td>${fmt(l.caTTC)}</td></tr>`).join('')}</tbody></table></div>
-        <button class="btn" data-complete-client-order="${escapeHtml(g.id)}">Ajouter des articles à cette commande</button>
+        <div class="client-edit-actions"><button class="btn" data-complete-client-order="${escapeHtml(g.id)}">Ajouter des articles</button><button class="btn" data-edit-client="${escapeHtml(g.id)}">Modifier la commande</button><button class="btn danger" data-delete-client="${escapeHtml(g.id)}">Supprimer la commande</button></div>
       </details>`).join(''):'<p class="orders-sub">Les commandes enregistrées apparaîtront ici, regroupées par référence et par client.</p>');
 }
 function resetPanierClient(){

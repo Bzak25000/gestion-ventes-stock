@@ -1,0 +1,15 @@
+.edit-dialog { width:min(1000px,calc(100% - 24px)); }
+.edit-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.edit-grid label { display:flex; flex-direction:column; gap:4px; min-width:0; font-size:13px; color:var(--text-secondary); }
+.edit-grid input,.edit-grid select { width:100%; min-width:0; padding:9px 10px; font:inherit; color:var(--text); background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius); }
+.edit-wide { grid-column:span 2; }
+.edit-line { border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:16px 0; background:var(--surface-2); }
+.edit-line-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.edit-footer { display:flex; flex-wrap:wrap; gap:8px; align-items:center; border-top:1px solid var(--border); padding-top:16px; margin-top:20px; }
+.client-edit-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+#edit-stock-description { margin-bottom:8px; overflow-wrap:anywhere; }
+#edit-stock-received { margin-bottom:16px; }
+#edit-stock-note { min-height:90px; }
+#uncovered-stock { display:flex; gap:16px; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; }
+.supplier-note { max-width:240px; white-space:pre-wrap; color:var(--text-secondary); font-size:12px; margin-top:4px; overflow-wrap:anywhere; }
+@media(max-width:640px){ .edit-grid{grid-template-columns:1fr 1fr;} .edit-line{padding:12px;} .edit-dialog{padding:16px;} .edit-footer .btn,.client-edit-actions .btn{white-space:normal;} }

@@ -28,6 +28,7 @@ function nettoyerLogistique(){
   logistique=logistique.filter(l=>keys.has(l.commandeClientId));
 }
 function logManque(groupe){
+  if(typeof articleManquant==='function')return groupe.lignes.reduce((s,v)=>s+articleManquant(v),0);
   const ids=new Set(groupe.lignes.map(v=>v.id));
   return commandesStock.filter(c=>ids.has(c.venteId)&&c.statut!=='annulee').reduce((s,c)=>s+remainingOrder(c),0);
 }

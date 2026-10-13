@@ -25,6 +25,7 @@ function initCommandes() {
       <div class="metric"><div class="metric-label">En attente</div><div class="metric-value" id="orders-sent">0</div><div class="orders-sub">article(s) commandé(s)</div></div>
       <div class="metric"><div class="metric-label">Clients en attente</div><div class="metric-value green" id="orders-clients">0</div><div class="orders-sub">à approvisionner</div></div>
     </div>
+    <div class="alert warning" id="uncovered-stock" hidden></div>
     <div class="card">
       <div class="order-tabs" role="group" aria-label="Statut des commandes">
         <button class="btn" data-order-filter="a_commander" onclick="filterOrders('a_commander')">À commander <span id="tab-pending-count"></span></button>
@@ -79,6 +80,9 @@ function initCommandes() {
     if (button.dataset.orderAction === 'done') marquerCommandesFaites(button.dataset.id);
     if (button.dataset.orderAction === 'receive') ouvrirReception(button.dataset.id);
     if (button.dataset.orderAction === 'cancel') confirmerAnnulationFournisseur(button.dataset.id);
+    if (button.dataset.orderAction === 'edit') ouvrirEditionStock(button.dataset.id);
+    if (button.dataset.orderAction === 'delete') supprimerCommandeStock(button.dataset.id);
+    if (button.dataset.orderAction === 'ack') confirmerCorrectionFournisseur(button.dataset.id);
   });
   document.getElementById('order-body').addEventListener('input', updateMailLength);
   document.getElementById('order-subject').addEventListener('input', updateMailLength);
@@ -89,7 +93,7 @@ function initCommandes() {
   });
   document.getElementById('storage-warning').hidden = storagePersistent;
   document.getElementById('environment-note').textContent = window.location.origin === 'https://bzak25000.github.io'
-    ? 'Ventes, stock & logistique · Version 4' : 'Aperçu indépendant · Utilisez votre adresse GitHub pour la gestion courante';
+    ? 'Ventes, stock & logistique · Version 5' : 'Aperçu indépendant · Utilisez votre adresse GitHub pour la gestion courante';
   renderCommandes();
 }
 
@@ -100,7 +104,7 @@ function renderCommandes() {
   const count = pending.reduce((s,c) => s + remainingOrder(c), 0);
   document.getElementById('orders-pending').textContent = count;
   document.getElementById('orders-sent').textContent = active.filter(c=>c.statut==='commandee').reduce((s,c)=>s+remainingOrder(c),0);
-  document.getElementById('orders-clients').textContent = new Set(active.filter(c=>!c.venteAnnulee).map(c=>c.client.trim().toLocaleLowerCase('fr'))).size;
+  document.getElementById('orders-clients').textContent = new Set(active.filter(c=>attenteReservee(c)>0).map(c=>c.client.trim().toLocaleLowerCase('fr'))).size;
   const badge = document.getElementById('commandes-badge');
   badge.textContent = count; badge.hidden = !count;
   const filter = document.getElementById('orders-filter').value;
@@ -119,12 +123,13 @@ function renderCommandes() {
       <td>${isPendingOrder(c)?`<input type="checkbox" class="order-check" value="${escapeHtml(c.id)}" aria-label="Commander pour ${escapeHtml(c.client)}, vente ${c.venteId}" checked>`:''}</td>
       <td>${escapeHtml(c.commandeClientRef||`Vente #${c.venteId}`)}<br><small>${escapeHtml(c.date)} · ligne #${c.venteId}</small></td>
       <td class="order-details"><strong>${escapeHtml(c.produitNom)}</strong><small>${escapeHtml(c.couleur)} · ${escapeHtml(c.motif)} · ${escapeHtml(c.taille)}</small></td>
-      <td class="order-details">${escapeHtml(c.client)}${c.venteAnnulee?'<small style="color:var(--danger)">Vente annulée : suivi fournisseur requis</small>':''}</td>
+      <td class="order-details">${escapeHtml(c.client)}${c.venteAnnulee?'<small style="color:var(--danger)">Vente supprimée : suivi fournisseur requis</small>':''}${c.stockLibre?'<small>Réceptions restantes : stock libre</small>':''}${!c.stockLibre&&c.qtyAffectee!==undefined&&remainingOrder(c)>attenteReservee(c)?`<small>${remainingOrder(c)-attenteReservee(c)} article(s) restant(s) pour stock libre</small>`:''}</td>
       <td><strong>${c.qty}</strong></td><td>${c.recue||0} / ${c.qty}</td>
-      <td><span class="order-status ${isPendingOrder(c)?'pending':c.statut==='recue'?'received':'sent'}">${orderLabel(c)}</span>${c.reference?`<small style="display:block">${escapeHtml(c.reference)}</small>`:''}</td>
-      <td><div class="order-actions">${isPendingOrder(c)?`<button class="btn sm" data-order-action="done" data-id="${escapeHtml(c.id)}">Commande faite</button>`:''}${c.statut==='commandee'&&remainingOrder(c)>0?`<button class="btn sm" data-order-action="receive" data-id="${escapeHtml(c.id)}">Marquer reçue</button>${c.venteAnnulee?`<button class="btn sm danger" data-order-action="cancel" data-id="${escapeHtml(c.id)}">Annulation fournisseur</button>`:''}`:''}</div></td>
+      <td><span class="order-status ${isPendingOrder(c)?'pending':c.statut==='recue'?'received':'sent'}">${orderLabel(c)}</span>${c.reference?`<small style="display:block">${escapeHtml(c.reference)}</small>`:''}${c.modificationFournisseurAConfirmer?'<small style="display:block;color:var(--warning)">Modification fournisseur à confirmer</small>':''}${c.noteFournisseur?`<div class="supplier-note">${escapeHtml(c.noteFournisseur)}</div>`:''}</td>
+      <td><div class="order-actions">${isPendingOrder(c)?`<button class="btn sm" data-order-action="done" data-id="${escapeHtml(c.id)}">Commande faite</button>`:''}${c.statut==='commandee'&&remainingOrder(c)>0?`<button class="btn sm" data-order-action="receive" data-id="${escapeHtml(c.id)}">Marquer reçue</button>${c.venteAnnulee?`<button class="btn sm danger" data-order-action="cancel" data-id="${escapeHtml(c.id)}">Annulation fournisseur</button>`:''}`:''}<button class="btn sm" data-order-action="edit" data-id="${escapeHtml(c.id)}">Modifier</button><button class="btn sm danger" data-order-action="delete" data-id="${escapeHtml(c.id)}">Supprimer</button>${c.modificationFournisseurAConfirmer?`<button class="btn sm" data-order-action="ack" data-id="${escapeHtml(c.id)}">Fournisseur informé</button>`:''}</div></td>
     </tr>`).join('') : '<tr><td colspan="8"><div class="order-empty"><strong>Aucune commande à afficher</strong>Une vente sans stock suffisant crée automatiquement une ligne ici.<br>Vous pouvez aussi modifier les filtres pour retrouver une commande.</div></td></tr>';
   updateOrderSelection();
+  if(typeof renderBesoinsNonCouverts==='function')renderBesoinsNonCouverts();
 }
 function filterOrders(status) {
   document.getElementById('orders-filter').value=status;
@@ -277,9 +282,9 @@ function ouvrirReception(id) {
   document.getElementById('receive-description').textContent = `${c.produitNom} · ${c.couleur} · ${c.motif} · ${c.taille} · Client : ${c.client}`;
   const input = document.getElementById('receive-qty');
   input.max=remainingOrder(c); input.value=remainingOrder(c);
-  document.getElementById('receive-destination').textContent = c.venteAnnulee
-    ? 'La vente est annulée : les articles reçus seront ajoutés au stock disponible.'
-    : 'Ces articles sont réservés à cette vente et ne sont pas ajoutés au stock disponible.';
+  const reservedRemaining=attenteReservee(c);
+  document.getElementById('receive-destination').textContent =
+    `Sur le solde restant : ${reservedRemaining} article(s) réservé(s) au client et ${remainingOrder(c)-reservedRemaining} article(s) destiné(s) au stock libre. Les réceptions sont affectées au client en priorité.`;
   document.getElementById('receive-flash').textContent='';
   document.getElementById('receive-form').onsubmit = event => {
     event.preventDefault();
@@ -287,12 +292,15 @@ function ouvrirReception(id) {
     if(!Number.isSafeInteger(qty)||qty<1||qty>remainingOrder(c)||c.statut!=='commandee'){
       flash('receive-flash','Quantité invalide ou commande modifiée.','err');return;
     }
-    c.recue=(c.recue||0)+qty;
-    if(c.venteAnnulee)stock[sKey(c.produitId,c.couleur,c.motif,c.taille)]=getStock(c.produitId,c.couleur,c.motif,c.taille)+qty;
+    if(!commandesStock.includes(c)){flash('receive-flash','Les données ont changé. Rouvrez cette réception.','err');return;}
+    const reserved=recueReservee(c),allocated=Math.min(qty,attenteReservee(c));
+    const assigned=quantiteReservee(c);
+    c.recue=(c.recue||0)+qty;c.recueAffectee=reserved+allocated;c.qtyAffectee=assigned;
+    if(qty>allocated)stock[sKey(c.produitId,c.couleur,c.motif,c.taille)]=getStock(c.produitId,c.couleur,c.motif,c.taille)+qty-allocated;
     if(c.recue===c.qty)c.statut='recue';
     c.receptions=c.receptions||[];c.receptions.push({qty,date:new Date().toISOString()});
     save();modal.close();renderCommandes();calcPrix();checkAlerts();
-    flash('orders-flash',`${qty} article(s) réceptionné(s).`,'ok');
+    flash('orders-flash',`${qty} article(s) réceptionné(s) : ${allocated} réservé(s) au client, ${qty-allocated} en stock libre.`,'ok');
   };
   modal.showModal();
 }
@@ -328,6 +336,7 @@ function validateData(d) {
     clientsParCommande.set(v.commandeClientId,metadata);
   }
   if(d.logistique!==undefined)validerDonneesLogistique(d.logistique);
+  if(typeof validerAffectationsStock==='function')validerAffectationsStock(d);
   return d;
 }
 async function importerDonnees(input) {
@@ -338,6 +347,7 @@ async function importerDonnees(input) {
     exporterDonnees();
     document.getElementById('order-mail').close();document.getElementById('order-receive').close();
     document.getElementById('log-dialog')?.close();
+    document.getElementById('edit-client-dialog')?.close();document.getElementById('edit-stock-dialog')?.close();
     // Un import explicite remplace le jeu complet, contrairement à une synchronisation ancienne.
     dbxApplyRemoteData({...data,commandesStock:data.commandesStock||[],logistique:data.logistique||[]});
     resetPanierClient();

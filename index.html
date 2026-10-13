@@ -178,6 +178,7 @@ tbody tr:hover { background:var(--surface-2); }
 </style>
 <link rel="stylesheet" href="commandes.css?v=3">
 <link rel="stylesheet" href="logistique.css?v=4">
+<link rel="stylesheet" href="edition.css?v=5">
 </head>
 <body>
 
@@ -699,7 +700,7 @@ async function dbxUpload(payload) {
 }
 
 function dbxBuildPayload() {
-  return { produits, stock, ventes, commandesStock, logistique, schemaVersion: 4, tva: TVA, updatedAt: new Date().toISOString() };
+  return { produits, stock, ventes, commandesStock, logistique, schemaVersion: 5, tva: TVA, updatedAt: new Date().toISOString() };
 }
 
 function dbxApplyRemoteData(data) {
@@ -1939,7 +1940,7 @@ function renderHistorique(){
   tbody.innerHTML=[...ventes].reverse().map(v=>`<tr>
     <td>${escapeHtml(v.date)}</td><td>${escapeHtml(v.client)}</td>
     <td><span class="badge ${v.type==='TPE Physique'?'tpe':'web'}">${v.type==='TPE Physique'?'TPE':'Web'}</span></td>
-    <td>${escapeHtml(v.produitNom)}${commandesStock.some(c=>c.venteId===v.id&&c.statut!=='annulee'&&c.recue<c.qty)?'<br><span class="order-status pending">Approvisionnement en cours</span>':''}</td>
+    <td>${escapeHtml(v.produitNom)}${articleApproEnCours(v)?'<br><span class="order-status pending">Approvisionnement en cours</span>':''}</td>
     <td>${colorDot(v.couleur)}${v.couleur}</td>
     <td><span class="motif-pill">${v.motif}</span></td>
     <td><span class="size-pill">${v.taille}</span></td>
@@ -1955,16 +1956,7 @@ function renderHistorique(){
   </tr>`).join('');
 }
 function supprimerVente(id){
-  const v=ventes.find(x=>x.id===id);
-  if(!v)return;
-  const liees=commandesStock.filter(c=>c.venteId===id && c.statut!=='annulee');
-  const enCours=liees.some(c=>c.statut==='commandee'&&c.recue<c.qty);
-  if(!confirm('Annuler cette vente ? Seules les quantités réellement prélevées ou reçues seront remises en stock.'+(enCours?'\nAttention : une commande a déjà été envoyée à The Hive. Elle reste à suivre ; contactez le fournisseur pour l’annuler ou réceptionnez-la en stock libre.':'')))return;
-  const retour=(v.preleveStock??v.qty)+liees.reduce((s,c)=>s+(c.recue||0),0);
-  stock[sKey(v.produitId,v.couleur,v.motif,v.taille)]=getStock(v.produitId,v.couleur,v.motif,v.taille)+retour;
-  liees.forEach(c=>{c.venteAnnulee=true;if(c.statut==='a_commander')c.statut='annulee';});
-  ventes=ventes.filter(x=>x.id!==id);
-  save();renderHistorique();renderMetrics();checkAlerts();renderCommandes();
+  supprimerLigneClient(id);
 }
 
 // ─── Stock ────────────────────────────────────────────────────────────────────
@@ -2395,9 +2387,10 @@ function renderRecommandations(){
 
 // Les fonctions Commande stock sont chargées avant l'initialisation.
 </script>
-<script src="commandes.js?v=4"></script>
-<script src="clients.js?v=4"></script>
-<script src="logistique.js?v=4"></script>
+<script src="commandes.js?v=5"></script>
+<script src="clients.js?v=5"></script>
+<script src="logistique.js?v=5"></script>
+<script src="edition.js?v=5"></script>
 <script>
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 initDate();
@@ -2409,6 +2402,7 @@ checkAlerts();
 initCommandes();
 initCommandesClients();
 initLogistique();
+initEditionCommandes();
 dbxInit();
 </script>
 </body>
