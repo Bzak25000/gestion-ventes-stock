@@ -355,12 +355,14 @@ tbody tr:hover { background:var(--surface-2); }
     <div class="field" style="margin-bottom:1rem">
       <label>Tailles disponibles</label>
       <div class="check-group" id="tailles-check">
-        <label class="check-item"><input type="checkbox" value="XS"> XS</label>
+        <label class="check-item"><input type="checkbox" value="XXS" checked> XXS</label>
+        <label class="check-item"><input type="checkbox" value="XS" checked> XS</label>
         <label class="check-item"><input type="checkbox" value="S" checked> S</label>
         <label class="check-item"><input type="checkbox" value="M" checked> M</label>
         <label class="check-item"><input type="checkbox" value="L" checked> L</label>
         <label class="check-item"><input type="checkbox" value="XL" checked> XL</label>
-        <label class="check-item"><input type="checkbox" value="XXL"> XXL</label>
+        <label class="check-item"><input type="checkbox" value="XXL" checked> XXL</label>
+        <label class="check-item"><input type="checkbox" value="3XL" checked> 3XL</label>
         <label class="check-item"><input type="checkbox" value="TU"> Taille unique</label>
       </div>
     </div>
@@ -707,6 +709,7 @@ function dbxApplyRemoteData(data) {
   if (!data) return;
   dbxSuppressNextRemoteApply = true;
   produits = data.produits || produits;
+  etendreTaillesTextiles();
   stock = data.stock || stock;
   ventes = data.ventes || ventes;
   // Ne pas effacer des commandes locales si une ancienne version du fichier est synchronisée.
@@ -2104,7 +2107,7 @@ function sauvegarderProduit(){
     p.nom=nom;p.achat=achat;p.venteHT=venteHT;p.couleurs=couleurs;p.motifs=motifs;p.tailles=tailles;
     flash('p-flash','Produit mis à jour ✓','ok');resetProduitForm();
   }else{
-    produits.push({id:nextProdId++,nom,achat,venteHT,couleurs,motifs,tailles});
+    produits.push({id:nextProdId++,nom,achat,venteHT,couleurs,motifs,tailles,gammeTextileVersion:1});
     flash('p-flash','Produit ajouté ✓','ok');
     document.getElementById('p-nom').value='';document.getElementById('p-achat').value='';document.getElementById('p-vente-ttc').value='';
   }
@@ -2114,7 +2117,7 @@ function resetProduitForm(){
   editingProdId=null;
   ['p-nom','p-achat','p-vente-ttc'].forEach(id=>document.getElementById(id).value='');
   tagState.couleurs=[];tagState.motifs=[];renderTags('couleurs');renderTags('motifs');
-  document.querySelectorAll('#tailles-check input').forEach(cb=>{cb.checked=['S','M','L','XL'].includes(cb.value);});
+  document.querySelectorAll('#tailles-check input').forEach(cb=>{cb.checked=TAILLES_TEXTILES.includes(cb.value);});
   document.getElementById('p-form-title').textContent='Ajouter un produit';
   document.getElementById('p-cancel-btn').style.display='none';
   document.getElementById('p-prix-preview').style.display='none';
@@ -2233,7 +2236,7 @@ function renderStats(){
         <span style="font-size:12px;color:var(--text-muted)">${d.qty} u. · ${d.caHT.toFixed(0)} €</span>
       </div>`).join('')||'<div style="color:var(--text-muted);font-size:13px;padding:.5rem 0">—</div>';
   }
-  const ORDER=['XS','S','M','L','XL','XXL','TU'];
+  const ORDER=[...TAILLES_TEXTILES,'TU'];
   const tAg={};ventes.forEach(v=>{tAg[v.taille]=(tAg[v.taille]||{qty:0,caHT:0});tAg[v.taille].qty+=v.qty;tAg[v.taille].caHT+=v.caHT;});
   document.getElementById('stats-tailles').innerHTML=Object.entries(tAg).sort((a,b)=>ORDER.indexOf(a[0])-ORDER.indexOf(b[0])).map(([t,d])=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)">
@@ -2388,7 +2391,8 @@ function renderRecommandations(){
 
 // Les fonctions Commande stock sont chargées avant l'initialisation.
 </script>
-<script src="commandes.js?v=6"></script>
+<script src="tailles.js?v=6.1"></script>
+<script src="commandes.js?v=6.1"></script>
 <script src="clients.js?v=6"></script>
 <script src="logistique.js?v=6"></script>
 <script src="edition.js?v=6"></script>
@@ -2396,6 +2400,7 @@ function renderRecommandations(){
 <script>
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 normaliserDestinationsCommandes();
+etendreTaillesTextiles();
 initDate();
 setupTagInput('couleurs');
 setupTagInput('motifs');
