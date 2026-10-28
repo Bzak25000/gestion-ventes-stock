@@ -179,6 +179,7 @@ tbody tr:hover { background:var(--surface-2); }
 <link rel="stylesheet" href="commandes.css?v=3">
 <link rel="stylesheet" href="logistique.css?v=4">
 <link rel="stylesheet" href="edition.css?v=5">
+<link rel="stylesheet" href="stock-navigation.css?v=6.2">
 </head>
 <body>
 
@@ -1965,12 +1966,13 @@ function supprimerVente(id){
 
 // ─── Stock ────────────────────────────────────────────────────────────────────
 function renderStock(){
+  const navigation=memoriserNavigationStock();
   let refs=0,units=0,low=0,out=0;const alerts=[];
   const html=produits.map(p=>{
     const total=p.couleurs.reduce((s,c)=>s+p.motifs.reduce((s2,m)=>s2+p.tailles.reduce((s3,t)=>s3+getStock(p.id,c,m,t),0),0),0);
     const tabsHtml=p.motifs.map((m,mi)=>`<button class="stock-tab ${mi===0?'active':''}" onclick="switchStockTab(${p.id},'${m.replace(/'/g,"\\'")}',this)">${m}</button>`).join('');
     const panelsHtml=p.motifs.map((m,mi)=>{
-      const hdrs=p.tailles.map(t=>`<th>${t}</th>`).join('');
+      const hdrs=p.tailles.map(t=>`<th data-stock-size="${escapeHtml(t)}">${escapeHtml(t)}</th>`).join('');
       const rows=p.couleurs.map(c=>{
         const cells=p.tailles.map(t=>{
           const q=getStock(p.id,c,m,t);
@@ -1990,21 +1992,28 @@ function renderStock(){
         }).join('');
         return `<tr><td class="row-td">${colorDot(c)}${c}</td>${cells}</tr>`;
       }).join('');
-      return `<div id="spanel-${p.id}-${mi}" style="display:${mi===0?'block':'none'}">
-        <div class="matrix-wrap"><table class="matrix"><thead><tr><th class="row-th">Couleur</th>${hdrs}</tr></thead><tbody>${rows}</tbody></table></div>
+      return `<div id="spanel-${p.id}-${mi}" data-stock-panel style="display:${mi===0?'block':'none'}">
+        <div class="matrix-wrap" tabindex="0" role="region" aria-label="Stock ${escapeHtml(p.nom)} · ${escapeHtml(m)} : faites défiler les tailles"><table class="matrix"><thead><tr><th class="row-th">Couleur</th>${hdrs}</tr></thead><tbody>${rows}</tbody></table></div>
       </div>`;
     }).join('');
-    return `<div class="stock-card">
+    return `<div class="stock-card" data-stock-product="${p.id}">
       <div class="stock-card-header">
         <div><div class="stock-card-name">${p.nom}</div>
         <div class="stock-card-meta">Achat ${p.achat.toFixed(2)} € HT · Vente ${htToTtc(p.venteHT).toFixed(2)} € TTC (${p.venteHT.toFixed(2)} € HT) · ${p.couleurs.length} couleurs · ${p.motifs.length} motifs</div></div>
         <span class="stock-card-total">${total} u.</span>
       </div>
       <div class="stock-tabs">${tabsHtml}</div>
+      <div class="stock-scroll-controls">
+        <button type="button" class="btn sm" data-stock-left onclick="naviguerStock(this,-1)" aria-label="Voir les tailles à gauche">Gauche</button>
+        <button type="button" class="btn sm" data-stock-right onclick="naviguerStock(this,1)" aria-label="Voir les tailles à droite">Droite</button>
+        <label>Aller à la taille<select data-stock-size onchange="allerTailleStock(this)"><option value="">Choisir</option>${p.tailles.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t==='XXL'?'XXL (2XL)':t)}</option>`).join('')}</select></label>
+      </div>
+      <p class="stock-scroll-help">Faites défiler le tableau ou choisissez une taille.</p>
       ${panelsHtml}
     </div>`;
   }).join('');
   document.getElementById('stock-grid').innerHTML=html;
+  restaurerNavigationStock(navigation);
   document.getElementById('s-refs').textContent=refs;
   document.getElementById('s-units').textContent=units;
   document.getElementById('s-low').textContent=low;
@@ -2016,11 +2025,14 @@ function renderStock(){
 }
 function switchStockTab(pid,motif,btn){
   const card=btn.closest('.stock-card');
+  const previous=activeStockMatrix(card);
+  if(previous)previous.dataset.restoreScroll=String(previous.scrollLeft);
   card.querySelectorAll('.stock-tab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
   const p=produits.find(x=>x.id===pid);
   const mi=p.motifs.indexOf(motif);
   p.motifs.forEach((_,i)=>{const panel=document.getElementById(`spanel-${pid}-${i}`);if(panel)panel.style.display=i===mi?'block':'none';});
+  afficherNavigationMotif(card);
 }
 function adjStock(pid,c,m,t,delta){setStock(pid,c,m,t,getStock(pid,c,m,t)+delta);renderStock();calcPrix();}
 function setStockDirect(pid,c,m,t,val){
@@ -2392,7 +2404,8 @@ function renderRecommandations(){
 // Les fonctions Commande stock sont chargées avant l'initialisation.
 </script>
 <script src="tailles.js?v=6.1"></script>
-<script src="commandes.js?v=6.1"></script>
+<script src="stock-navigation.js?v=6.2"></script>
+<script src="commandes.js?v=6.2"></script>
 <script src="clients.js?v=6"></script>
 <script src="logistique.js?v=6"></script>
 <script src="edition.js?v=6"></script>

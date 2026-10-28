@@ -107,7 +107,7 @@ function initCommandes() {
   });
   document.getElementById('storage-warning').hidden = storagePersistent;
   document.getElementById('environment-note').textContent = window.location.origin === 'https://bzak25000.github.io'
-    ? 'Ventes, stock & logistique · Version 6.1' : 'Aperçu indépendant · Utilisez votre adresse GitHub pour la gestion courante';
+    ? 'Ventes, stock & logistique · Version 6.2' : 'Aperçu indépendant · Utilisez votre adresse GitHub pour la gestion courante';
   renderCommandes();
 }
 

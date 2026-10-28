@@ -1,0 +1,23 @@
+/* Keep horizontal overflow inside each stock matrix, not the page/grid. */
+main { min-width:0; }
+.stock-grid { grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr)); }
+.stock-card { min-width:0; max-width:100%; }
+.stock-card-header { gap:8px; }
+.stock-card-header > div { min-width:0; }
+.stock-card-name,.stock-card-meta { overflow-wrap:anywhere; }
+.stock-scroll-controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
+.stock-scroll-controls label { display:flex; align-items:center; flex:1 1 150px; gap:8px; font-size:12px; color:var(--text-secondary); }
+.stock-scroll-controls select { width:auto; min-width:80px; padding:6px; }
+.stock-scroll-controls .btn { min-height:34px; padding:6px 10px; }
+.stock-scroll-controls .btn:disabled { opacity:.45; cursor:default; }
+.stock-scroll-help { color:var(--text-secondary); font-size:12px; margin:0 0 10px; }
+.matrix-wrap { max-width:100%; overflow-x:auto; overscroll-behavior-x:contain; padding-bottom:8px; scrollbar-width:auto; scrollbar-color:var(--accent) var(--surface-2); }
+.matrix-wrap::-webkit-scrollbar { height:12px; }
+.matrix-wrap::-webkit-scrollbar-track { background:var(--surface-2); border-radius:6px; }
+.matrix-wrap::-webkit-scrollbar-thumb { background:var(--accent); border:2px solid var(--surface-2); border-radius:6px; }
+.matrix-wrap:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.matrix { border-collapse:separate; border-spacing:0; }
+.matrix th:not(.row-th),.matrix td:not(.row-td) { min-width:82px; }
+.matrix .row-th,.matrix .row-td { position:sticky; left:0; z-index:1; min-width:84px; max-width:125px; background:var(--surface); box-shadow:2px 0 0 var(--border); white-space:normal; overflow-wrap:anywhere; }
+.matrix .qty-btn { flex-shrink:0; }
+@media(max-width:900px){ .stock-grid { grid-template-columns:minmax(0,1fr); } }
