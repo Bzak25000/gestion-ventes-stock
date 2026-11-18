@@ -153,10 +153,33 @@ dbxApplyRemoteData=function(data){
   hsRafraichir();
   return res;
 };
+// L'état de base n'est créé qu'après un échange Dropbox réussi : jamais depuis une copie locale périmée.
+let hsDropboxOk=false;
+const hsDownloadOriginal=dbxDownload;
+dbxDownload=async function(){
+  const d=await hsDownloadOriginal.apply(this,arguments);
+  if(d)hsDropboxOk=true;
+  return d;
+};
+const hsUploadOriginal=dbxUpload;
+dbxUpload=async function(){
+  const ok=await hsUploadOriginal.apply(this,arguments);
+  if(ok)hsDropboxOk=true;
+  return ok;
+};
+function hsCreerBaseSiPossible(){
+  if(stockBase||!(hsDropboxOk||!dbxAccessToken))return;
+  hsCreerBase();dbxScheduleUpload();hsRafraichir();
+}
 const hsInitOriginal=dbxInit;
 dbxInit=async function(){
   try{return await hsInitOriginal.apply(this,arguments);}
-  finally{if(!stockBase){hsCreerBase();dbxScheduleUpload();}hsRafraichir();}
+  finally{hsCreerBaseSiPossible();hsRafraichir();}
+};
+const hsManualSyncOriginal=dbxManualSync;
+dbxManualSync=async function(){
+  try{return await hsManualSyncOriginal.apply(this,arguments);}
+  finally{hsCreerBaseSiPossible();}
 };
 
 // ─── Interface ───────────────────────────────────────────────────────────────
@@ -251,7 +274,7 @@ function hsInstallerInterface(){
 }
 function hsRenderHistorique(){
   const base=document.getElementById('hs-base');if(!base)return;
-  if(!stockBase){base.innerHTML='<p class="hs-note">L’état de base sera créé dès la fin du chargement des données.</p>';return;}
+  if(!stockBase){base.innerHTML=`<p class="hs-note">${dbxAccessToken?'L’état de base sera créé dès que les données auront été synchronisées avec Dropbox. Si la session Dropbox a expiré, reconnectez-vous.':'L’état de base sera créé dès la fin du chargement des données.'}</p>`;document.getElementById('hs-controle').innerHTML='';return;}
   const unites=Object.values(stockBase.stock).reduce((s,q)=>s+hsNum(q),0);
   const refs=Object.values(stockBase.stock).filter(q=>q).length;
   base.innerHTML=`<p>Historique démarré le <strong>${hsDate(stockBase.at)}</strong> : ${unites} unité(s) sur ${refs} déclinaison(s) en stock.</p>
