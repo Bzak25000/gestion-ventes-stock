@@ -692,9 +692,7 @@ async function dbxDownload(retry = true) {
     if (resp.status === 401) { if (retry && await dbxRefreshAccessToken()) return dbxDownload(false); dbxSetStatus('error','Session expirée, reconnecte-toi'); return null; }
     if (!resp.ok) throw new Error('Téléchargement échoué (' + resp.status + ')');
     const text = await resp.text();
-    const parsed = JSON.parse(text);
-    dbxRemoteLoaded = true;
-    return parsed;
+    return JSON.parse(text);
   } catch (e) {
     console.error('dbxDownload', e);
     return null;
@@ -717,6 +715,7 @@ async function dbxUpload(payload, retry = true) {
     });
     if (resp.status === 401) { if (retry && await dbxRefreshAccessToken()) return dbxUpload(payload, false); dbxSetStatus('error','Session expirée, reconnecte-toi'); return false; }
     if (!resp.ok) throw new Error('Envoi échoué (' + resp.status + ')');
+    appStorage.setItem('dbx_last_sync_sig', dbxSignature(payload));
     return true;
   } catch (e) {
     console.error('dbxUpload', e);
@@ -766,11 +765,59 @@ function dbxApplyRemoteData(data) {
   if(typeof renderLogistique==='function')renderLogistique();
 }
 
+function dbxSignature(d) {
+  const txt = JSON.stringify([d.produits || [], d.stock || {}, d.ventes || [], d.commandesStock || [], d.logistique || []]);
+  let h = 2166136261;
+  for (let i = 0; i < txt.length; i++) { h ^= txt.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(16) + '-' + txt.length;
+}
+function dbxLocalSignature() { return dbxSignature({ produits, stock, ventes, commandesStock, logistique }); }
+function dbxResume(d) {
+  const unites = Object.values(d.stock || {}).reduce((a, v) => a + (Number(v) || 0), 0);
+  return `${(d.produits || []).length} produits, ${unites} unités en stock, ${(d.ventes || []).length} ventes`;
+}
+
+// Réconciliation à trois voies : on n'écrase jamais des modifications locales non synchronisées.
+async function dbxReconcile(remote) {
+  const local = dbxLocalSignature();
+  const distant = dbxSignature(remote);
+  const dernier = appStorage.getItem('dbx_last_sync_sig');
+  const appliquer = () => {
+    dbxApplyRemoteData(remote);
+    appStorage.setItem('dbx_last_sync_sig', dbxLocalSignature());
+    dbxRemoteLoaded = true;
+    return true;
+  };
+  const envoyerLocal = async () => {
+    dbxRemoteLoaded = true;
+    const ok = await dbxUpload(dbxBuildPayload());
+    if (!ok) { dbxRemoteLoaded = false; dbxSetStatus('error', 'Envoi Dropbox échoué'); }
+    return ok;
+  };
+  if (local === distant) { appStorage.setItem('dbx_last_sync_sig', local); dbxRemoteLoaded = true; return true; }
+  if (dernier && local === dernier) return appliquer();          // seul Dropbox a changé
+  if (dernier && distant === dernier) return envoyerLocal();     // seul cet appareil a changé
+  const dateDistante = remote.updatedAt ? new Date(remote.updatedAt).toLocaleString('fr-FR') : 'inconnue';
+  const garder = confirm(
+    'Les données de cet appareil sont différentes de celles de Dropbox.\n\n' +
+    'Cet appareil : ' + dbxResume({ produits, stock, ventes }) + '\n' +
+    'Dropbox (' + dateDistante + ') : ' + dbxResume(remote) + '\n\n' +
+    'OK : garder les données de cet appareil et les envoyer sur Dropbox.\n' +
+    'Annuler : voir les autres choix.');
+  if (garder) return envoyerLocal();
+  if (confirm('Remplacer les données de cet appareil par celles de Dropbox ?\nUne sauvegarde des données actuelles de cet appareil sera conservée.')) {
+    appStorage.setItem('appv4_sauvegarde_avant_sync', JSON.stringify({ at: new Date().toISOString(), ...dbxBuildPayload() }));
+    return appliquer();
+  }
+  dbxSetStatus('error', 'Conflit avec Dropbox : synchronisation suspendue');
+  return false;
+}
+
 async function dbxManualSync() {
   if (!dbxAccessToken) return;
   dbxSetStatus('syncing');
   const remote = await dbxDownload();
-  if (remote) { dbxApplyRemoteData(remote); dbxSetStatus('connected'); }
+  if (remote) { if (await dbxReconcile(remote)) dbxSetStatus('connected'); }
   else if (dbxLastDownloadMissing) dbxSetStatus('connected');
   else dbxSetStatus('error', 'Dropbox injoignable, reconnecte-toi ou réessaie');
 }
@@ -791,7 +838,7 @@ async function dbxInit() {
   dbxSetStatus('syncing', 'Récupération des données…');
   const remote = await dbxDownload();
   if (remote) {
-    dbxApplyRemoteData(remote);
+    if (!(await dbxReconcile(remote))) return;
   } else if (dbxLastDownloadMissing) {
     // Aucun fichier distant : on le crée à partir des données locales.
     const ok = await dbxUpload(dbxBuildPayload());
@@ -2438,7 +2485,7 @@ function renderRecommandations(){
 <script src="logistique.js?v=6"></script>
 <script src="edition.js?v=6"></script>
 <script src="approvisionnement.js?v=6"></script>
-<script src="stock-historique.js?v=3"></script>
+<script src="stock-historique.js?v=4"></script>
 <script>
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 normaliserDestinationsCommandes();

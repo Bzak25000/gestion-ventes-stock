@@ -168,7 +168,7 @@ dbxUpload=async function(){
   return ok;
 };
 function hsCreerBaseSiPossible(){
-  if(stockBase||!(hsDropboxOk||!dbxAccessToken))return;
+  if(stockBase||(dbxAccessToken&&!dbxRemoteLoaded))return;
   hsCreerBase();dbxScheduleUpload();hsRafraichir();
 }
 const hsInitOriginal=dbxInit;
