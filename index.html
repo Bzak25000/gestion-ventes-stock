@@ -658,7 +658,27 @@ function dbxDisconnect() {
   dbxSetStatus('off');
 }
 
-async function dbxDownload() {
+async function dbxRefreshAccessToken() {
+  const refresh = appStorage.getItem('dbx_refresh_token');
+  if (!refresh) return false;
+  try {
+    const resp = await fetch('https://api.dropboxapi.com/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh, client_id: DBX_APP_KEY }),
+    });
+    const data = await resp.json();
+    if (!data.access_token) return false;
+    dbxAccessToken = data.access_token;
+    appStorage.setItem('dbx_access_token', dbxAccessToken);
+    return true;
+  } catch (e) { console.error('dbxRefreshAccessToken', e); return false; }
+}
+
+let dbxLastDownloadMissing = false;
+let dbxRemoteLoaded = false; // empêche d'écraser Dropbox tant que les données distantes n'ont pas été lues
+async function dbxDownload(retry = true) {
+  dbxLastDownloadMissing = false;
   if (!dbxAccessToken) return null;
   try {
     const resp = await fetch('https://content.dropboxapi.com/2/files/download', {
@@ -668,18 +688,20 @@ async function dbxDownload() {
         'Dropbox-API-Arg': JSON.stringify({ path: DBX_FILE_PATH }),
       },
     });
-    if (resp.status === 409) return null; // file doesn't exist yet
-    if (resp.status === 401) { dbxSetStatus('error','Session expirée, reconnecte-toi'); return null; }
+    if (resp.status === 409) { dbxLastDownloadMissing = true; dbxRemoteLoaded = true; return null; } // file doesn't exist yet
+    if (resp.status === 401) { if (retry && await dbxRefreshAccessToken()) return dbxDownload(false); dbxSetStatus('error','Session expirée, reconnecte-toi'); return null; }
     if (!resp.ok) throw new Error('Téléchargement échoué (' + resp.status + ')');
     const text = await resp.text();
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    dbxRemoteLoaded = true;
+    return parsed;
   } catch (e) {
     console.error('dbxDownload', e);
     return null;
   }
 }
 
-async function dbxUpload(payload) {
+async function dbxUpload(payload, retry = true) {
   if (!dbxAccessToken) return false;
   try {
     const resp = await fetch('https://content.dropboxapi.com/2/files/upload', {
@@ -693,7 +715,7 @@ async function dbxUpload(payload) {
       },
       body: JSON.stringify(payload, null, 2),
     });
-    if (resp.status === 401) { dbxSetStatus('error','Session expirée, reconnecte-toi'); return false; }
+    if (resp.status === 401) { if (retry && await dbxRefreshAccessToken()) return dbxUpload(payload, false); dbxSetStatus('error','Session expirée, reconnecte-toi'); return false; }
     if (!resp.ok) throw new Error('Envoi échoué (' + resp.status + ')');
     return true;
   } catch (e) {
@@ -748,12 +770,13 @@ async function dbxManualSync() {
   if (!dbxAccessToken) return;
   dbxSetStatus('syncing');
   const remote = await dbxDownload();
-  if (remote) dbxApplyRemoteData(remote);
-  dbxSetStatus('connected');
+  if (remote) { dbxApplyRemoteData(remote); dbxSetStatus('connected'); }
+  else if (dbxLastDownloadMissing) dbxSetStatus('connected');
+  else dbxSetStatus('error', 'Dropbox injoignable, reconnecte-toi ou réessaie');
 }
 
 function dbxScheduleUpload() {
-  if (!dbxAccessToken || dbxSuppressNextRemoteApply) return;
+  if (!dbxAccessToken || dbxSuppressNextRemoteApply || !dbxRemoteLoaded) return;
   clearTimeout(dbxSyncTimer);
   dbxSetStatus('syncing');
   dbxSyncTimer = setTimeout(async () => {
@@ -769,9 +792,14 @@ async function dbxInit() {
   const remote = await dbxDownload();
   if (remote) {
     dbxApplyRemoteData(remote);
-  } else if (cameFromOAuth || true) {
-    // First time / no remote file yet → push local data to create it
-    await dbxUpload(dbxBuildPayload());
+  } else if (dbxLastDownloadMissing) {
+    // Aucun fichier distant : on le crée à partir des données locales.
+    const ok = await dbxUpload(dbxBuildPayload());
+    if (!ok) { dbxSetStatus('error', 'Envoi Dropbox échoué'); return; }
+  } else {
+    // Échec de lecture (session, réseau) : ne jamais écraser Dropbox avec une copie locale.
+    if (dbxAccessToken) dbxSetStatus('error', 'Dropbox injoignable, reconnecte-toi ou réessaie');
+    return;
   }
   dbxSetStatus('connected');
 }
@@ -2410,7 +2438,7 @@ function renderRecommandations(){
 <script src="logistique.js?v=6"></script>
 <script src="edition.js?v=6"></script>
 <script src="approvisionnement.js?v=6"></script>
-<script src="stock-historique.js?v=2"></script>
+<script src="stock-historique.js?v=3"></script>
 <script>
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 normaliserDestinationsCommandes();
